@@ -94,7 +94,10 @@ func main() {
 	)
 
 	// --- Services ---
-	authSvc     := authservice.NewAuthService(userRepo, tokenRepo, jwtManager)
+	authSvc := authservice.NewAuthService(
+		userRepo, tokenRepo, jwtManager,
+		cfg.Google.ClientID, cfg.Google.ClientSecret, cfg.Google.RedirectURL,
+	)
 	identitySvc := idservice.NewIdentityService(userRepo)
 	deviceSvc   := devservice.NewDeviceService(deviceRepo)
 	activitySvc := actservice.NewActivityService(activityRepo, bus)
@@ -142,6 +145,8 @@ func main() {
 	auth.Post("/login",         authH.Login)
 	auth.Post("/logout",        authH.Logout)
 	auth.Post("/token/refresh", authH.Refresh)
+	auth.Get("/google/login",    authH.GoogleLogin)
+	auth.Get("/google/callback", authH.GoogleCallback)
 
 	// Protected
 	protected := api.Use(middleware.RequireAuth(jwtManager))

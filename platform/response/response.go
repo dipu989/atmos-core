@@ -44,3 +44,7 @@ func Conflict(c *fiber.Ctx, msg string) error {
 func InternalError(c *fiber.Ctx, msg string) error {
 	return c.Status(fiber.StatusInternalServerError).JSON(envelope{Success: false, Error: msg})
 }
+
+func ServiceUnavailable(c *fiber.Ctx, msg string) error {
+	return c.Status(fiber.StatusServiceUnavailable).JSON(envelope{Success: false, Error: msg})
+}
