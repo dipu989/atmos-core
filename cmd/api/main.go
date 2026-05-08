@@ -1,3 +1,20 @@
+// @title          Atmos API
+// @version        1.0
+// @description    Personal environmental telemetry and carbon intelligence platform.
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name  Atmos Team
+// @contact.email me.shantnu@gmail.com
+
+// @license.name MIT
+
+// @host     localhost:8081
+// @BasePath /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in                         header
+// @name                       Authorization
+// @description                Enter: Bearer <your_access_token>
 package main
 
 import (
@@ -5,14 +22,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	_ "github.com/dipu/atmos-core/docs"
+
 	"github.com/dipu/atmos-core/config"
-	authhandler "github.com/dipu/atmos-core/internal/auth/handler"
-	authrepo "github.com/dipu/atmos-core/internal/auth/repository"
-	authservice "github.com/dipu/atmos-core/internal/auth/service"
 	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
 	acthandler "github.com/dipu/atmos-core/internal/activity/handler"
 	actrepo "github.com/dipu/atmos-core/internal/activity/repository"
 	actservice "github.com/dipu/atmos-core/internal/activity/service"
+	authhandler "github.com/dipu/atmos-core/internal/auth/handler"
+	authrepo "github.com/dipu/atmos-core/internal/auth/repository"
+	authservice "github.com/dipu/atmos-core/internal/auth/service"
 	devhandler "github.com/dipu/atmos-core/internal/device/handler"
 	devrepo "github.com/dipu/atmos-core/internal/device/repository"
 	devservice "github.com/dipu/atmos-core/internal/device/service"
@@ -25,8 +44,8 @@ import (
 	insighthandler "github.com/dipu/atmos-core/internal/insight/handler"
 	insightrepo "github.com/dipu/atmos-core/internal/insight/repository"
 	insightservice "github.com/dipu/atmos-core/internal/insight/service"
-	timelinehandler "github.com/dipu/atmos-core/internal/timeline/handler"
 	timelineagg "github.com/dipu/atmos-core/internal/timeline/aggregator"
+	timelinehandler "github.com/dipu/atmos-core/internal/timeline/handler"
 	timelinerepo "github.com/dipu/atmos-core/internal/timeline/repository"
 	timelineservice "github.com/dipu/atmos-core/internal/timeline/service"
 	"github.com/dipu/atmos-core/platform/database"
@@ -36,6 +55,7 @@ import (
 	"github.com/dipu/atmos-core/platform/middleware"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	fiberSwagger "github.com/swaggo/fiber-swagger"
 	"go.uber.org/zap"
 )
 
@@ -103,66 +123,78 @@ func main() {
 		DisableStartupMessage: cfg.App.Env == "production",
 	})
 
+	// --- Global middleware ---
 	app.Use(recover.New())
 	app.Use(middleware.RequestID())
+	app.Use(middleware.CORS())
+	app.Use(middleware.RateLimit())
 
-	// Health check
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
-	})
+	// --- Health + Swagger (unauthenticated) ---
+	app.Get("/health", healthHandler)
+	app.Get("/swagger/*", fiberSwagger.WrapHandler)
 
+	// --- API v1 ---
 	api := app.Group("/api/v1")
 
-	// --- Auth routes (public) ---
-	auth := api.Group("/auth")
-	auth.Post("/register", authH.Register)
-	auth.Post("/login",    authH.Login)
-	auth.Post("/logout",   authH.Logout)
+	// Auth (stricter rate limit on these endpoints)
+	auth := api.Group("/auth", middleware.RateLimitStrict())
+	auth.Post("/register",      authH.Register)
+	auth.Post("/login",         authH.Login)
+	auth.Post("/logout",        authH.Logout)
 	auth.Post("/token/refresh", authH.Refresh)
 
-	// --- Protected routes ---
+	// Protected
 	protected := api.Use(middleware.RequireAuth(jwtManager))
 
-	// Identity
 	protected.Get("/users/me",   identityH.GetMe)
 	protected.Patch("/users/me", identityH.UpdateMe)
 
-	// Devices
-	protected.Post("/devices",           deviceH.Register)
-	protected.Get("/devices",            deviceH.List)
-	protected.Patch("/devices/:id",      deviceH.UpdatePushToken)
-	protected.Delete("/devices/:id",     deviceH.Deregister)
+	protected.Post("/devices",       deviceH.Register)
+	protected.Get("/devices",        deviceH.List)
+	protected.Patch("/devices/:id",  deviceH.UpdatePushToken)
+	protected.Delete("/devices/:id", deviceH.Deregister)
 
-	// Activities
-	protected.Post("/activities",     activityH.Ingest)
-	protected.Get("/activities",      activityH.ListActivities)
-	protected.Get("/activities/:id",  activityH.GetActivity)
+	protected.Post("/activities",    activityH.Ingest)
+	protected.Get("/activities",     activityH.ListActivities)
+	protected.Get("/activities/:id", activityH.GetActivity)
 
-	// Timeline
-	protected.Get("/timeline/day/:date",              timelineH.GetDay)
-	protected.Get("/timeline/week/:week_start",        timelineH.GetWeek)
-	protected.Get("/timeline/month/:year/:month",      timelineH.GetMonth)
-	protected.Get("/timeline/range",                   timelineH.GetRange)
+	protected.Get("/timeline/day/:date",         timelineH.GetDay)
+	protected.Get("/timeline/week/:week_start",   timelineH.GetWeek)
+	protected.Get("/timeline/month/:year/:month", timelineH.GetMonth)
+	protected.Get("/timeline/range",              timelineH.GetRange)
 
-	// Insights
-	protected.Get("/insights",          insightH.ListInsights)
-	protected.Get("/insights/:id",      insightH.GetInsight)
+	protected.Get("/insights",           insightH.ListInsights)
+	protected.Get("/insights/:id",       insightH.GetInsight)
 	protected.Patch("/insights/:id/read", insightH.MarkRead)
 
 	// --- Graceful shutdown ---
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
 	go func() {
 		<-quit
 		log.Info("shutting down server")
 		_ = app.Shutdown()
 	}()
 
-	log.Info("starting server", zap.String("port", cfg.App.Port))
+	log.Info("starting server",
+		zap.String("port", cfg.App.Port),
+		zap.String("env", cfg.App.Env),
+		zap.String("swagger", "http://localhost:"+cfg.App.Port+"/swagger/index.html"),
+	)
 	if err := app.Listen(":" + cfg.App.Port); err != nil {
 		log.Fatal("server error", zap.Error(err))
 	}
+}
+
+// healthHandler godoc
+// @Summary     Health check
+// @Description Returns server and dependency status
+// @Tags        system
+// @Produce     json
+// @Success     200 {object} map[string]string
+// @Router      /health [get]
+func healthHandler(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{"status": "ok", "version": "1.0"})
 }
 
 func globalErrorHandler(c *fiber.Ctx, err error) error {
@@ -175,4 +207,3 @@ func globalErrorHandler(c *fiber.Ctx, err error) error {
 		"error":   err.Error(),
 	})
 }
-

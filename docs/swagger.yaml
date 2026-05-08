@@ -1,0 +1,35 @@
+basePath: /api/v1
+host: localhost:8081
+info:
+  contact:
+    email: me.shantnu@gmail.com
+    name: Atmos Team
+  description: Personal environmental telemetry and carbon intelligence platform.
+  license:
+    name: MIT
+  termsOfService: http://swagger.io/terms/
+  title: Atmos API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      description: Returns server and dependency status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - system
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter: Bearer <your_access_token>'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
