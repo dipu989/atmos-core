@@ -1,0 +1,36 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output
+/tmp/
+dist/
+
+# Go build cache (not needed in repo)
+*.test
+*.out
+
+# Environment — never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/
+*.swp
+*.swo
+*.suo
+.DS_Store
+
+# Air (live reload)
+air.toml
+.air.toml
+tmp/
