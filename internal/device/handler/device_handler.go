@@ -2,9 +2,11 @@ package handler
 
 import (
 	"github.com/dipu/atmos-core/internal/device/domain"
+	"github.com/dipu/atmos-core/internal/device/dto"
 	"github.com/dipu/atmos-core/internal/device/service"
 	"github.com/dipu/atmos-core/platform/middleware"
 	"github.com/dipu/atmos-core/platform/response"
+	"github.com/dipu/atmos-core/platform/validator"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
@@ -17,22 +19,23 @@ func NewDeviceHandler(svc *service.DeviceService) *DeviceHandler {
 	return &DeviceHandler{svc: svc}
 }
 
+// Register godoc
+// @Summary     Register or update a device
+// @Description Registers a new device or updates an existing one (upsert by device_token).
+// @Description iOS/iPadOS require push_provider=apns and apns_environment.
+// @Description Android requires push_provider=fcm or none.
+// @Tags        devices
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       body body     dto.RegisterDeviceRequest true "Device registration payload"
+// @Success     201  {object} domain.Device
+// @Failure     400  {object} map[string]interface{}
+// @Router      /devices/register [post]
 func (h *DeviceHandler) Register(c *fiber.Ctx) error {
-	var req struct {
-		DeviceToken     string  `json:"device_token"`
-		Platform        string  `json:"platform"`
-		PushProvider    string  `json:"push_provider"`
-		APNsEnvironment *string `json:"apns_environment"`
-		DeviceName      *string `json:"device_name"`
-		OSVersion       *string `json:"os_version"`
-		AppVersion      *string `json:"app_version"`
-		PushToken       *string `json:"push_token"`
-	}
-	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "invalid request body")
-	}
-	if req.DeviceToken == "" || req.Platform == "" {
-		return response.BadRequest(c, "device_token and platform are required")
+	var req dto.RegisterDeviceRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
 	}
 
 	var apnsEnv *domain.APNsEnvironment
@@ -65,6 +68,15 @@ func (h *DeviceHandler) Register(c *fiber.Ctx) error {
 	return response.Created(c, device)
 }
 
+// List godoc
+// @Summary     List active devices
+// @Description Returns all active devices registered by the authenticated user
+// @Tags        devices
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {array}  domain.Device
+// @Failure     500 {object} map[string]interface{}
+// @Router      /devices [get]
 func (h *DeviceHandler) List(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 	devices, err := h.svc.ListDevices(c.Context(), userID)
@@ -74,6 +86,17 @@ func (h *DeviceHandler) List(c *fiber.Ctx) error {
 	return response.OK(c, devices)
 }
 
+// Deregister godoc
+// @Summary     Deregister a device
+// @Description Marks a device as inactive (soft deactivation)
+// @Tags        devices
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id  path     string true "Device UUID"
+// @Success     204
+// @Failure     400 {object} map[string]interface{}
+// @Failure     500 {object} map[string]interface{}
+// @Router      /devices/{id} [delete]
 func (h *DeviceHandler) Deregister(c *fiber.Ctx) error {
 	deviceID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
@@ -86,17 +109,28 @@ func (h *DeviceHandler) Deregister(c *fiber.Ctx) error {
 	return response.NoContent(c)
 }
 
+// UpdatePushToken godoc
+// @Summary     Update device push token
+// @Description Updates the push token (and optionally app version) for a device
+// @Tags        devices
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id   path     string                    true "Device UUID"
+// @Param       body body     dto.UpdatePushTokenRequest true "Push token payload"
+// @Success     200  {object} domain.Device
+// @Failure     400  {object} map[string]interface{}
+// @Failure     500  {object} map[string]interface{}
+// @Router      /devices/{id} [patch]
 func (h *DeviceHandler) UpdatePushToken(c *fiber.Ctx) error {
 	deviceID, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return response.BadRequest(c, "invalid device id")
 	}
-	var req struct {
-		PushToken  string  `json:"push_token"`
-		AppVersion *string `json:"app_version"`
-	}
-	if err := c.BodyParser(&req); err != nil || req.PushToken == "" {
-		return response.BadRequest(c, "push_token is required")
+
+	var req dto.UpdatePushTokenRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
 	}
 
 	userID := middleware.CurrentUserID(c)

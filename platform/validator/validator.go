@@ -12,7 +12,8 @@ import (
 var v = validator.New()
 
 // ParseAndValidate parses the request body into dst and runs struct validation.
-// Returns a 400 response directly on failure, so callers can do:
+// Returns a *fiber.Error on failure so Fiber's global error handler sends the response.
+// Callers check the return value and return it immediately:
 //
 //	var req RegisterRequest
 //	if err := validator.ParseAndValidate(c, &req); err != nil {
@@ -20,21 +21,15 @@ var v = validator.New()
 //	}
 func ParseAndValidate(c *fiber.Ctx, dst any) error {
 	if err := c.BodyParser(dst); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   "invalid request body",
-		})
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
 	if err := v.Struct(dst); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   formatValidationErrors(err),
-		})
+		return fiber.NewError(fiber.StatusBadRequest, formatValidationErrors(err))
 	}
 	return nil
 }
 
-// Struct validates a struct directly (use when body is already parsed).
+// Struct validates a struct directly (use when the body is already parsed).
 func Struct(s any) error {
 	return v.Struct(s)
 }

@@ -146,13 +146,15 @@ func main() {
 	// Protected
 	protected := api.Use(middleware.RequireAuth(jwtManager))
 
-	protected.Get("/users/me",   identityH.GetMe)
-	protected.Patch("/users/me", identityH.UpdateMe)
+	protected.Get("/users/me",                  identityH.GetMe)
+	protected.Put("/users/me",                   identityH.UpdateMe)
+	protected.Get("/users/me/preferences",       identityH.GetPreferences)
+	protected.Put("/users/me/preferences",       identityH.UpdatePreferences)
 
-	protected.Post("/devices",       deviceH.Register)
-	protected.Get("/devices",        deviceH.List)
-	protected.Patch("/devices/:id",  deviceH.UpdatePushToken)
-	protected.Delete("/devices/:id", deviceH.Deregister)
+	protected.Post("/devices/register", deviceH.Register)
+	protected.Get("/devices",           deviceH.List)
+	protected.Patch("/devices/:id",     deviceH.UpdatePushToken)
+	protected.Delete("/devices/:id",    deviceH.Deregister)
 
 	protected.Post("/activities",    activityH.Ingest)
 	protected.Get("/activities",     activityH.ListActivities)

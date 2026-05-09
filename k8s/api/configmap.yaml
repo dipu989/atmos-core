@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atmos-api-config
+  namespace: atmos
+data:
+  APP_ENV: "development"
+  APP_PORT: "8080"
+  DB_HOST: "postgres"       # matches the postgres Service name
+  DB_PORT: "5432"
+  DB_NAME: "atmos_dev"
+  DB_USER: "atmos"
+  DB_SSLMODE: "disable"
+  JWT_ACCESS_TTL: "15m"
+  JWT_REFRESH_TTL: "720h"
