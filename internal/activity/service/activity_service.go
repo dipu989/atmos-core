@@ -108,11 +108,16 @@ func (s *ActivityService) GetActivity(ctx context.Context, id, userID uuid.UUID)
 	return s.repo.FindByID(ctx, id, userID)
 }
 
-func (s *ActivityService) ListActivities(ctx context.Context, userID uuid.UUID, from, to time.Time, limit, offset int) ([]actdomain.Activity, error) {
+func (s *ActivityService) ListActivities(ctx context.Context, userID uuid.UUID, from, to time.Time, limit, offset int) ([]actdomain.Activity, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	return s.repo.ListByUser(ctx, userID, from, to, limit, offset)
+	total, err := s.repo.CountByUser(ctx, userID, from, to)
+	if err != nil {
+		return nil, 0, err
+	}
+	activities, err := s.repo.ListByUser(ctx, userID, from, to, limit, offset)
+	return activities, total, err
 }
 
 func localDate(t time.Time, timezone string) time.Time {

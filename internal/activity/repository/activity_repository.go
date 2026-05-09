@@ -42,6 +42,14 @@ func (r *ActivityRepository) ListByUser(ctx context.Context, userID uuid.UUID, f
 	return activities, q.Find(&activities).Error
 }
 
+func (r *ActivityRepository) CountByUser(ctx context.Context, userID uuid.UUID, from, to time.Time) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.Activity{}).
+		Where("user_id = ? AND date_local BETWEEN ? AND ?", userID, from, to).
+		Count(&count).Error
+	return count, err
+}
+
 func (r *ActivityRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.ActivityStatus, reason *string) error {
 	updates := map[string]any{"status": status}
 	if reason != nil {
