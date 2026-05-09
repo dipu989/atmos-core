@@ -21,13 +21,16 @@ const (
 	ActivityFood      ActivityType = "food"
 
 	ModeCAB          TransportMode = "cab"
+	ModeCar          TransportMode = "car"
 	ModeAutoRickshaw TransportMode = "auto_rickshaw"
 	ModeBus          TransportMode = "bus"
 	ModeMetro        TransportMode = "metro"
 	ModeTrain        TransportMode = "train"
 	ModeTwoWheeler   TransportMode = "two_wheeler"
-	ModeWalk         TransportMode = "walk"
-	ModeBicycle      TransportMode = "bicycle"
+	ModeWalk         TransportMode = "walk"    // legacy; prefer ModeWalking
+	ModeWalking      TransportMode = "walking"
+	ModeBicycle      TransportMode = "bicycle" // legacy; prefer ModeCycling
+	ModeCycling      TransportMode = "cycling"
 	ModeFlight       TransportMode = "flight"
 
 	SourceManual  ActivitySource = "manual"
