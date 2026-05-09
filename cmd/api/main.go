@@ -165,7 +165,10 @@ func main() {
 	protected.Get("/activities",     activityH.ListActivities)
 	protected.Get("/activities/:id", activityH.GetActivity)
 
-	protected.Get("/timeline/day/:date",         timelineH.GetDay)
+	protected.Get("/timeline/daily",              timelineH.GetDaily)
+	protected.Get("/timeline/weekly",             timelineH.GetWeekly)
+	protected.Get("/timeline/monthly",            timelineH.GetMonthly)
+	protected.Get("/timeline/day/:date",          timelineH.GetDay)
 	protected.Get("/timeline/week/:week_start",   timelineH.GetWeek)
 	protected.Get("/timeline/month/:year/:month", timelineH.GetMonth)
 	protected.Get("/timeline/range",              timelineH.GetRange)
