@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: atmos
+spec:
+  accessModes:
+    - ReadWriteOnce   # one node can mount this at a time (fine for single Postgres pod)
+  resources:
+    requests:
+      storage: 1Gi

@@ -4,7 +4,7 @@ BINARY_SEED    := bin/seed
 
 GOFLAGS := -ldflags="-s -w"
 
-.PHONY: all build run dev stop migrate seed swagger lint fmt test clean docker-up docker-down docker-logs help
+.PHONY: all build run dev stop migrate seed swagger lint fmt test clean docker-up docker-down docker-logs k8s-build k8s-deploy k8s-delete k8s-status k8s-logs help
 
 ## ── Build ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +76,33 @@ docker-db:
 	docker compose up -d postgres
 	@echo "✓ postgres started on :5433"
 
+## ── Kubernetes (minikube) ────────────────────────────────────────────────────
+
+# Build the Docker image directly into minikube's internal registry
+k8s-build:
+	eval $$(minikube docker-env) && docker build -t atmos-api:latest .
+	@echo "✓ image built inside minikube"
+
+# Apply all manifests (namespace first, then dependencies, then app)
+k8s-deploy: k8s-build
+	kubectl apply -f k8s/namespace.yaml
+	kubectl apply -f k8s/postgres/
+	kubectl apply -f k8s/api/
+	@echo "✓ manifests applied — watch: kubectl get pods -n atmos -w"
+
+# Tear everything down (keeps the namespace)
+k8s-delete:
+	kubectl delete -f k8s/api/     --ignore-not-found
+	kubectl delete -f k8s/postgres/ --ignore-not-found
+
+# Quick status overview
+k8s-status:
+	kubectl get pods,svc,ingress -n atmos
+
+# Tail API pod logs
+k8s-logs:
+	kubectl logs -n atmos -l app=atmos-api -f
+
 ## ── Cleanup ──────────────────────────────────────────────────────────────────
 
 clean:
@@ -102,4 +129,9 @@ help:
 	@echo "  make docker-db    Start only the PostgreSQL container"
 	@echo "  make docker-logs  Tail API container logs"
 	@echo "  make clean        Remove build artifacts"
+	@echo "  make k8s-build    Build Docker image into minikube"
+	@echo "  make k8s-deploy   Build image and apply all K8s manifests"
+	@echo "  make k8s-delete   Remove all K8s resources (keeps namespace)"
+	@echo "  make k8s-status   Show pods, services, and ingress in atmos namespace"
+	@echo "  make k8s-logs     Tail the API pod logs"
 	@echo ""

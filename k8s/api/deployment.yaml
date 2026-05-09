@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atmos-api
+  namespace: atmos
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: atmos-api
+  template:
+    metadata:
+      labels:
+        app: atmos-api
+    spec:
+      # Run migrations before the API starts.
+      # If migrate exits non-zero, the pod stays in Init state — API never starts.
+      initContainers:
+        - name: migrate
+          image: atmos-api:latest    # same image; contains the migrate binary
+          imagePullPolicy: Never     # use local minikube image (no registry)
+          command: ["./migrate"]
+          envFrom:
+            - configMapRef:
+                name: atmos-api-config
+            - secretRef:
+                name: atmos-api-secret
+
+      containers:
+        - name: api
+          image: atmos-api:latest
+          imagePullPolicy: Never     # use local minikube image
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: atmos-api-config
+            - secretRef:
+                name: atmos-api-secret
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          # readinessProbe: pod receives traffic only once this passes
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # livenessProbe: pod is restarted if this fails repeatedly
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10

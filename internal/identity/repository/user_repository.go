@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/dipu/atmos-core/internal/identity/domain"
 	"github.com/google/uuid"
@@ -52,13 +53,13 @@ func (r *UserRepository) FindOrCreateByOAuth(ctx context.Context, provider, prov
 		user, userErr := r.FindByID(ctx, op.UserID)
 		return user, false, userErr
 	}
-	if err != gorm.ErrRecordNotFound {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, err
 	}
 
 	// New OAuth user — find by email or create
 	user, err := r.FindByEmail(ctx, email)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, err
 	}
 
@@ -93,4 +94,23 @@ func (r *UserRepository) FindOrCreateByOAuth(ctx context.Context, provider, prov
 	}
 
 	return user, created, nil
+}
+
+// ── Preferences ───────────────────────────────────────────────────────────────
+
+func (r *UserRepository) GetPreferences(ctx context.Context, userID uuid.UUID) (*domain.UserPreferences, error) {
+	var prefs domain.UserPreferences
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&prefs).Error
+	if err != nil {
+		return nil, err
+	}
+	return &prefs, nil
+}
+
+func (r *UserRepository) CreatePreferences(ctx context.Context, prefs *domain.UserPreferences) error {
+	return r.db.WithContext(ctx).Create(prefs).Error
+}
+
+func (r *UserRepository) UpdatePreferences(ctx context.Context, prefs *domain.UserPreferences) error {
+	return r.db.WithContext(ctx).Save(prefs).Error
 }

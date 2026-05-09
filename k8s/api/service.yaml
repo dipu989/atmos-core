@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: atmos-api
+  namespace: atmos
+spec:
+  selector:
+    app: atmos-api
+  ports:
+    - port: 80          # port other services inside the cluster use
+      targetPort: 8080  # port the container listens on
+  type: ClusterIP
