@@ -15,8 +15,8 @@ import (
 )
 
 type InsightService struct {
-	repo        *insightrepo.InsightRepository
-	streakRule  *rules.StreakRule
+	repo       *insightrepo.InsightRepository
+	streakRule *rules.StreakRule
 }
 
 func NewInsightService(repo *insightrepo.InsightRepository) *InsightService {

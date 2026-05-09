@@ -27,19 +27,19 @@ const (
 	ModeMetro        TransportMode = "metro"
 	ModeTrain        TransportMode = "train"
 	ModeTwoWheeler   TransportMode = "two_wheeler"
-	ModeWalk         TransportMode = "walk"    // legacy; prefer ModeWalking
+	ModeWalk         TransportMode = "walk" // legacy; prefer ModeWalking
 	ModeWalking      TransportMode = "walking"
 	ModeBicycle      TransportMode = "bicycle" // legacy; prefer ModeCycling
 	ModeCycling      TransportMode = "cycling"
 	ModeFlight       TransportMode = "flight"
 
-	SourceManual  ActivitySource = "manual"
-	SourceUber    ActivitySource = "uber"
-	SourceOla     ActivitySource = "ola"
-	SourceRapido  ActivitySource = "rapido"
+	SourceManual     ActivitySource = "manual"
+	SourceUber       ActivitySource = "uber"
+	SourceOla        ActivitySource = "ola"
+	SourceRapido     ActivitySource = "rapido"
 	SourceNammaYatri ActivitySource = "namma_yatri"
-	SourceGmail   ActivitySource = "gmail"
-	SourceHealth  ActivitySource = "health_kit"
+	SourceGmail      ActivitySource = "gmail"
+	SourceHealth     ActivitySource = "health_kit"
 
 	StatusPending   ActivityStatus = "pending"
 	StatusProcessed ActivityStatus = "processed"

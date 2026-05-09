@@ -77,13 +77,13 @@ func main() {
 	bus := eventbus.NewInMemoryBus()
 
 	// --- Repositories ---
-	userRepo     := idrepo.NewUserRepository(db)
-	tokenRepo    := authrepo.NewTokenRepository(db)
-	deviceRepo   := devrepo.NewDeviceRepository(db)
+	userRepo := idrepo.NewUserRepository(db)
+	tokenRepo := authrepo.NewTokenRepository(db)
+	deviceRepo := devrepo.NewDeviceRepository(db)
 	activityRepo := actrepo.NewActivityRepository(db)
 	emissionRepo := emirepo.NewEmissionRepository(db)
-	summaryRepo  := timelinerepo.NewSummaryRepository(db)
-	insightRepo  := insightrepo.NewInsightRepository(db)
+	summaryRepo := timelinerepo.NewSummaryRepository(db)
+	insightRepo := insightrepo.NewInsightRepository(db)
 
 	// --- JWT ---
 	jwtManager := jwtpkg.NewManager(
@@ -99,12 +99,12 @@ func main() {
 		cfg.Google.ClientID, cfg.Google.ClientSecret, cfg.Google.RedirectURL,
 	)
 	identitySvc := idservice.NewIdentityService(userRepo)
-	deviceSvc   := devservice.NewDeviceService(deviceRepo)
+	deviceSvc := devservice.NewDeviceService(deviceRepo)
 	activitySvc := actservice.NewActivityService(activityRepo, bus)
 	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus)
-	agg         := timelineagg.NewAggregator(summaryRepo)
+	agg := timelineagg.NewAggregator(summaryRepo)
 	timelineSvc := timelineservice.NewTimelineService(summaryRepo, agg)
-	insightSvc  := insightservice.NewInsightService(insightRepo)
+	insightSvc := insightservice.NewInsightService(insightRepo)
 
 	// --- Event subscriptions ---
 	bus.Subscribe(actdomain.EventActivityIngested, emissionSvc.HandleActivityIngested)
@@ -112,12 +112,12 @@ func main() {
 	bus.Subscribe(emidomain.EventEmissionCalculated, insightSvc.HandleEmissionCalculated)
 
 	// --- Handlers ---
-	authH     := authhandler.NewAuthHandler(authSvc)
+	authH := authhandler.NewAuthHandler(authSvc)
 	identityH := idhandler.NewIdentityHandler(identitySvc)
-	deviceH   := devhandler.NewDeviceHandler(deviceSvc)
+	deviceH := devhandler.NewDeviceHandler(deviceSvc)
 	activityH := acthandler.NewActivityHandler(activitySvc)
 	timelineH := timelinehandler.NewTimelineHandler(timelineSvc)
-	insightH  := insighthandler.NewInsightHandler(insightSvc)
+	insightH := insighthandler.NewInsightHandler(insightSvc)
 
 	// --- Fiber app ---
 	app := fiber.New(fiber.Config{
@@ -141,40 +141,40 @@ func main() {
 
 	// Auth (stricter rate limit on these endpoints)
 	auth := api.Group("/auth", middleware.RateLimitStrict())
-	auth.Post("/register",      authH.Register)
-	auth.Post("/login",         authH.Login)
-	auth.Post("/logout",        authH.Logout)
+	auth.Post("/register", authH.Register)
+	auth.Post("/login", authH.Login)
+	auth.Post("/logout", authH.Logout)
 	auth.Post("/token/refresh", authH.Refresh)
-	auth.Get("/google/login",    authH.GoogleLogin)
+	auth.Get("/google/login", authH.GoogleLogin)
 	auth.Get("/google/callback", authH.GoogleCallback)
 
 	// Protected
 	protected := api.Use(middleware.RequireAuth(jwtManager))
 
-	protected.Get("/users/me",                  identityH.GetMe)
-	protected.Put("/users/me",                   identityH.UpdateMe)
-	protected.Get("/users/me/preferences",       identityH.GetPreferences)
-	protected.Put("/users/me/preferences",       identityH.UpdatePreferences)
+	protected.Get("/users/me", identityH.GetMe)
+	protected.Put("/users/me", identityH.UpdateMe)
+	protected.Get("/users/me/preferences", identityH.GetPreferences)
+	protected.Put("/users/me/preferences", identityH.UpdatePreferences)
 
 	protected.Post("/devices/register", deviceH.Register)
-	protected.Get("/devices",           deviceH.List)
-	protected.Patch("/devices/:id",     deviceH.UpdatePushToken)
-	protected.Delete("/devices/:id",    deviceH.Deregister)
+	protected.Get("/devices", deviceH.List)
+	protected.Patch("/devices/:id", deviceH.UpdatePushToken)
+	protected.Delete("/devices/:id", deviceH.Deregister)
 
-	protected.Post("/activities",    activityH.Ingest)
-	protected.Get("/activities",     activityH.ListActivities)
+	protected.Post("/activities", activityH.Ingest)
+	protected.Get("/activities", activityH.ListActivities)
 	protected.Get("/activities/:id", activityH.GetActivity)
 
-	protected.Get("/timeline/daily",              timelineH.GetDaily)
-	protected.Get("/timeline/weekly",             timelineH.GetWeekly)
-	protected.Get("/timeline/monthly",            timelineH.GetMonthly)
-	protected.Get("/timeline/day/:date",          timelineH.GetDay)
-	protected.Get("/timeline/week/:week_start",   timelineH.GetWeek)
+	protected.Get("/timeline/daily", timelineH.GetDaily)
+	protected.Get("/timeline/weekly", timelineH.GetWeekly)
+	protected.Get("/timeline/monthly", timelineH.GetMonthly)
+	protected.Get("/timeline/day/:date", timelineH.GetDay)
+	protected.Get("/timeline/week/:week_start", timelineH.GetWeek)
 	protected.Get("/timeline/month/:year/:month", timelineH.GetMonth)
-	protected.Get("/timeline/range",              timelineH.GetRange)
+	protected.Get("/timeline/range", timelineH.GetRange)
 
-	protected.Get("/insights",           insightH.ListInsights)
-	protected.Get("/insights/:id",       insightH.GetInsight)
+	protected.Get("/insights", insightH.ListInsights)
+	protected.Get("/insights/:id", insightH.GetInsight)
 	protected.Patch("/insights/:id/read", insightH.MarkRead)
 
 	// --- Graceful shutdown ---
