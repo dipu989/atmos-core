@@ -58,10 +58,15 @@ func (m *Manager) RefreshTTL() time.Duration { return m.refreshTTL }
 
 func (m *Manager) sign(userID uuid.UUID, tt TokenType, secret []byte, ttl time.Duration) (string, error) {
 	now := time.Now()
+	jti, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
 	claims := &Claims{
 		UserID:    userID,
 		TokenType: tt,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti.String(),
 			Subject:   userID.String(),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),

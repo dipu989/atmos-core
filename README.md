@@ -11,7 +11,7 @@ This project is an attempt to visualize the impact each of us has on the planet 
 
 | Layer | Technology |
 |---|---|
-| Language | Go 1.24 |
+| Language | Go 1.26 |
 | Framework | GoFiber v2 |
 | Database | PostgreSQL 16 |
 | ORM | GORM |
@@ -22,40 +22,34 @@ This project is an attempt to visualize the impact each of us has on the planet 
 ## Quick start
 
 ### Prerequisites
-- Go 1.22+
-- Docker + Docker Compose (or a local PostgreSQL instance)
+- Go 1.26+
+- Docker + Docker Compose
 
-### 1. Clone and configure
+### First-time setup
+
+Run the bootstrap script — it validates tooling, copies `.env`, starts postgres, runs migrations, and seeds the database:
 
 ```bash
 git clone https://github.com/dipu989/atmos-core.git
 cd atmos-core
-cp .env.example .env
-# Edit .env — set DB_* and JWT_* values
+make bootstrap
 ```
 
-### 2. Start the database
+Then edit `.env` and set `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` to random 32-char strings:
 
 ```bash
-make docker-db        # starts postgres on :5433
+openssl rand -hex 32   # run twice — one value per secret
 ```
 
-### 3. Run migrations and seeds
+### Start the server
 
 ```bash
-make migrate          # applies all pending SQL migrations
-make seed             # seeds emission factors and reference data
+make dev              # live reload via Air (installed automatically)
+# or
+make run              # compile and run once
 ```
 
-### 4. Start the server
-
-```bash
-make run              # builds and starts on :8080
-# or for live reload:
-make dev              # requires air (installed automatically)
-```
-
-### 5. Explore the API
+### Explore the API
 
 Swagger UI: [http://localhost:8080/swagger/index.html](http://localhost:8080/swagger/index.html)
 
@@ -95,22 +89,32 @@ atmos-core/
 
 ## Makefile targets
 
-```
-make build        Build all binaries (api, migrate, seed)
-make run          Build and run the API server
-make dev          Run with live reload (requires air)
-make migrate      Apply pending database migrations
-make migrate-dry  Show pending migrations without applying
-make seed         Run all database seeders
-make swagger      Regenerate Swagger docs
-make lint         Run golangci-lint
-make fmt          Format all Go files
-make test         Run all tests
-make docker-up    Build and start all services via Docker Compose
-make docker-down  Stop all containers
-make docker-logs  Tail API container logs
-make clean        Remove build artifacts
-```
+| Target | Description |
+|---|---|
+| `make bootstrap` | First-time setup — tools, infra, migrate, seed |
+| `make dev` | Run with live reload (Air installed automatically) |
+| `make run` | Build and start the API |
+| `make build` | Compile all binaries (`api`, `migrate`, `seed`) |
+| **Database** | |
+| `make migrate-up` | Apply all pending migrations |
+| `make migrate-down` | Roll back the last migration |
+| `make migrate-dry` | Preview pending migrations without applying |
+| `make seed` | Run all seeders (idempotent) |
+| `make reset-db` | Drop, recreate, migrate, and seed — destructive |
+| **Infrastructure** | |
+| `make infra-up` | Start PostgreSQL via Docker Compose |
+| `make infra-down` | Stop all Docker Compose services |
+| `make docker-logs` | Tail API container logs |
+| **Quality** | |
+| `make fmt` | Format all Go files with `gofmt` |
+| `make lint` | Run `golangci-lint` |
+| `make vet` | Run `go vet` |
+| `make test` | Run all tests with race detector |
+| `make swag` | Regenerate Swagger docs |
+| `make smoke-test` | Curl-based end-to-end API smoke tests |
+| `make clean` | Remove build artifacts (`bin/`, `tmp/`) |
+
+Run `make help` to see the full list in the terminal.
 
 ## Environment variables
 
@@ -119,7 +123,7 @@ make clean        Remove build artifacts
 | `APP_ENV` | No | `development` | `development` or `production` |
 | `APP_PORT` | No | `8080` | HTTP listen port |
 | `DB_HOST` | Yes | — | PostgreSQL host |
-| `DB_PORT` | No | `5432` | PostgreSQL port |
+| `DB_PORT` | No | `5433` | PostgreSQL port (Docker Compose maps to 5433) |
 | `DB_USER` | Yes | — | PostgreSQL user |
 | `DB_PASSWORD` | Yes | — | PostgreSQL password |
 | `DB_NAME` | Yes | — | PostgreSQL database name |
