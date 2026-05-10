@@ -86,18 +86,33 @@ The squash commit subject must follow the conventional commit format. GitHub wil
 
 ## Running Locally
 
+For first-time setup, the bootstrap script handles everything:
+
 ```bash
-# Start dependencies
-make docker-up
+make bootstrap      # validates tools, starts postgres, migrates, seeds
+```
 
-# Apply migrations
-make migrate
+Day-to-day commands:
 
-# Seed reference data
-make seed
+```bash
+make infra-up       # start PostgreSQL (if not already running)
+make migrate-up     # apply pending migrations
+make seed           # re-run seeders (idempotent)
+make dev            # start API with live reload
+```
 
-# Run the API
-make run
+Resetting your local database (destructive — drops and recreates):
+
+```bash
+make reset-db
+```
+
+Running smoke tests against a locally running API:
+
+```bash
+make smoke-test
+# or against another target:
+BASE_URL=http://localhost:8080 make smoke-test
 ```
 
 ## Generating Swagger Docs

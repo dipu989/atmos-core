@@ -4,134 +4,176 @@ BINARY_SEED    := bin/seed
 
 GOFLAGS := -ldflags="-s -w"
 
-.PHONY: all build run dev stop migrate seed swagger lint fmt test clean docker-up docker-down docker-logs k8s-build k8s-deploy k8s-delete k8s-status k8s-logs help
+.PHONY: all build run dev \
+        migrate-up migrate-down migrate-dry \
+        seed infra-up infra-down reset-db \
+        swag lint fmt vet test \
+        smoke-test \
+        docker-logs docker-db \
+        k8s-build k8s-deploy k8s-delete k8s-status k8s-logs \
+        clean help
 
-## ── Build ────────────────────────────────────────────────────────────────────
+## ── Default ───────────────────────────────────────────────────────────────────
 
 all: build
 
-build: swagger
+## ── Build ─────────────────────────────────────────────────────────────────────
+
+build: swag
 	@mkdir -p bin
 	go build $(GOFLAGS) -o $(BINARY_API)     ./cmd/api
 	go build $(GOFLAGS) -o $(BINARY_MIGRATE) ./cmd/migrate
 	go build $(GOFLAGS) -o $(BINARY_SEED)    ./cmd/seed
-	@echo "✓ build complete"
+	@echo "✓ build complete → bin/"
 
-## ── Run ──────────────────────────────────────────────────────────────────────
+## ── Run ───────────────────────────────────────────────────────────────────────
 
 run: build
 	./$(BINARY_API)
 
 dev:
-	@which air > /dev/null || go install github.com/air-verse/air@latest
+	@which air > /dev/null 2>&1 || go install github.com/air-verse/air@latest
 	air
 
-## ── Database ─────────────────────────────────────────────────────────────────
+## ── Database ──────────────────────────────────────────────────────────────────
 
-migrate:
+migrate-up:
 	go run ./cmd/migrate
+	@echo "✓ migrations applied"
+
+migrate-down:
+	go run ./cmd/migrate --rollback
+	@echo "✓ last migration rolled back"
 
 migrate-dry:
 	go run ./cmd/migrate --dry-run
 
 seed:
-	go run ./cmd/seed
+	@bash scripts/seed.sh
 
-## ── Swagger ──────────────────────────────────────────────────────────────────
+reset-db:
+	@bash scripts/reset-db.sh
 
-swagger:
-	@which swag > /dev/null || go install github.com/swaggo/swag/cmd/swag@latest
-	swag init -g cmd/api/main.go -o docs --quiet
-	@echo "✓ swagger docs generated → docs/"
+## ── Infrastructure ────────────────────────────────────────────────────────────
 
-## ── Quality ──────────────────────────────────────────────────────────────────
+infra-up:
+	docker compose up -d postgres
+	@echo "✓ postgres ready on localhost:5433"
 
-lint:
-	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	golangci-lint run ./...
-
-fmt:
-	gofmt -w .
-	goimports -w . 2>/dev/null || true
-
-test:
-	go test ./... -v -race -count=1
-
-vet:
-	go vet ./...
-
-## ── Docker ───────────────────────────────────────────────────────────────────
-
-docker-up:
-	docker compose up -d --build
-	@echo "✓ services started"
-
-docker-down:
+infra-down:
 	docker compose down
+	@echo "✓ infrastructure stopped"
 
 docker-logs:
 	docker compose logs -f api
 
 docker-db:
 	docker compose up -d postgres
-	@echo "✓ postgres started on :5433"
 
-## ── Kubernetes (minikube) ────────────────────────────────────────────────────
+## ── Quality ───────────────────────────────────────────────────────────────────
 
-# Build the Docker image directly into minikube's internal registry
+fmt:
+	gofmt -w .
+	@which goimports > /dev/null 2>&1 && goimports -w . || true
+	@echo "✓ formatting done"
+
+lint:
+	@which golangci-lint > /dev/null 2>&1 || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	golangci-lint run ./...
+
+vet:
+	go vet ./...
+
+test:
+	go test ./... -v -race -count=1
+
+## ── Swagger ───────────────────────────────────────────────────────────────────
+
+swag:
+	@which swag > /dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
+	swag init -g cmd/api/main.go -o docs --quiet
+	@echo "✓ swagger docs → docs/"
+
+## ── Smoke Test ────────────────────────────────────────────────────────────────
+
+smoke-test:
+	@bash scripts/smoke-test.sh
+
+## ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+bootstrap:
+	@bash scripts/bootstrap.sh
+
+## ── Kubernetes (minikube) ─────────────────────────────────────────────────────
+
 k8s-build:
 	eval $$(minikube docker-env) && docker build -t atmos-api:latest .
 	@echo "✓ image built inside minikube"
 
-# Apply all manifests (namespace first, then dependencies, then app)
 k8s-deploy: k8s-build
 	kubectl apply -f k8s/namespace.yaml
 	kubectl apply -f k8s/postgres/
 	kubectl apply -f k8s/api/
-	@echo "✓ manifests applied — watch: kubectl get pods -n atmos -w"
+	@echo "✓ manifests applied"
 
-# Tear everything down (keeps the namespace)
 k8s-delete:
-	kubectl delete -f k8s/api/     --ignore-not-found
+	kubectl delete -f k8s/api/      --ignore-not-found
 	kubectl delete -f k8s/postgres/ --ignore-not-found
 
-# Quick status overview
 k8s-status:
 	kubectl get pods,svc,ingress -n atmos
 
-# Tail API pod logs
 k8s-logs:
 	kubectl logs -n atmos -l app=atmos-api -f
 
-## ── Cleanup ──────────────────────────────────────────────────────────────────
+## ── Cleanup ───────────────────────────────────────────────────────────────────
 
 clean:
 	rm -rf bin/ tmp/
 
-## ── Help ─────────────────────────────────────────────────────────────────────
+## ── Help ──────────────────────────────────────────────────────────────────────
 
 help:
 	@echo ""
-	@echo "  Atmos backend — available targets"
+	@echo "  Atmos Core — available targets"
 	@echo ""
-	@echo "  make build        Build all binaries (api, migrate, seed)"
-	@echo "  make run          Build and run the API server"
-	@echo "  make dev          Run with live reload (requires air)"
-	@echo "  make migrate      Apply pending database migrations"
-	@echo "  make migrate-dry  Show pending migrations without applying"
-	@echo "  make seed         Run all database seeders"
-	@echo "  make swagger      Generate Swagger docs"
-	@echo "  make lint         Run golangci-lint"
-	@echo "  make fmt          Format all Go files"
-	@echo "  make test         Run all tests"
-	@echo "  make docker-up    Build and start all containers"
-	@echo "  make docker-down  Stop all containers"
-	@echo "  make docker-db    Start only the PostgreSQL container"
-	@echo "  make docker-logs  Tail API container logs"
-	@echo "  make clean        Remove build artifacts"
-	@echo "  make k8s-build    Build Docker image into minikube"
-	@echo "  make k8s-deploy   Build image and apply all K8s manifests"
-	@echo "  make k8s-delete   Remove all K8s resources (keeps namespace)"
-	@echo "  make k8s-status   Show pods, services, and ingress in atmos namespace"
-	@echo "  make k8s-logs     Tail the API pod logs"
+	@echo "  Development"
+	@echo "  ─────────────────────────────────────────────────"
+	@echo "  make bootstrap      First-time setup (tools, infra, migrate, seed)"
+	@echo "  make dev            Run API with live reload (Air)"
+	@echo "  make run            Build and run the API"
+	@echo "  make build          Compile all binaries"
+	@echo ""
+	@echo "  Database"
+	@echo "  ─────────────────────────────────────────────────"
+	@echo "  make migrate-up     Apply all pending migrations"
+	@echo "  make migrate-down   Roll back the last migration"
+	@echo "  make migrate-dry    Preview pending migrations"
+	@echo "  make seed           Run all seed scripts"
+	@echo "  make reset-db       Drop, recreate, migrate, and seed"
+	@echo ""
+	@echo "  Infrastructure"
+	@echo "  ─────────────────────────────────────────────────"
+	@echo "  make infra-up       Start PostgreSQL via Docker Compose"
+	@echo "  make infra-down     Stop all Docker Compose services"
+	@echo "  make docker-logs    Tail API container logs"
+	@echo ""
+	@echo "  Quality"
+	@echo "  ─────────────────────────────────────────────────"
+	@echo "  make fmt            Format all Go files"
+	@echo "  make lint           Run golangci-lint"
+	@echo "  make vet            Run go vet"
+	@echo "  make test           Run all tests"
+	@echo "  make swag           Regenerate Swagger docs"
+	@echo "  make smoke-test     Run curl-based API smoke tests"
+	@echo ""
+	@echo "  Kubernetes"
+	@echo "  ─────────────────────────────────────────────────"
+	@echo "  make k8s-build      Build image into minikube"
+	@echo "  make k8s-deploy     Apply all K8s manifests"
+	@echo "  make k8s-delete     Remove K8s resources"
+	@echo "  make k8s-status     Show pods, services, ingress"
+	@echo "  make k8s-logs       Tail API pod logs"
+	@echo ""
+	@echo "  make clean          Remove build artifacts (bin/, tmp/)"
 	@echo ""
