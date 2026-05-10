@@ -10,10 +10,10 @@ import (
 )
 
 type Config struct {
-	App      AppConfig
-	DB       DBConfig
-	JWT      JWTConfig
-	Google   GoogleOAuthConfig
+	App    AppConfig
+	DB     DBConfig
+	JWT    JWTConfig
+	Google GoogleOAuthConfig
 }
 
 type AppConfig struct {

@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to open db", zap.Error(err))
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := db.Ping(); err != nil {
 		log.Fatal("failed to connect to db", zap.Error(err))
@@ -106,7 +106,7 @@ func appliedMigrations(db *sql.DB) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	applied := map[string]bool{}
 	for rows.Next() {

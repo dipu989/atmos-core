@@ -30,7 +30,7 @@ var (
 	ErrEmailTaken         = errors.New("email already registered")
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrInvalidToken       = errors.New("invalid or expired refresh token")
-	ErrOAuthNotConfigured = errors.New("Google OAuth is not configured")
+	ErrOAuthNotConfigured = errors.New("google OAuth is not configured")
 )
 
 type TokenPair struct {
@@ -254,11 +254,11 @@ func fetchGoogleProfile(ctx context.Context, cfg *oauth2.Config, token *oauth2.T
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Google userinfo returned %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("google userinfo returned %d: %s", resp.StatusCode, body)
 	}
 
 	var profile googleProfile
@@ -266,7 +266,7 @@ func fetchGoogleProfile(ctx context.Context, cfg *oauth2.Config, token *oauth2.T
 		return nil, err
 	}
 	if profile.ID == "" || profile.Email == "" {
-		return nil, errors.New("Google profile missing id or email")
+		return nil, errors.New("google profile missing id or email")
 	}
 	return &profile, nil
 }

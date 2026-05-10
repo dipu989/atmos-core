@@ -1,0 +1,55 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+
+linters-settings:
+  errcheck:
+    # Ignore errors returned by fmt.Print* and common fire-and-forget patterns.
+    exclude-functions:
+      - fmt.Print
+      - fmt.Println
+      - fmt.Printf
+      - (io.Closer).Close
+      - (*go.uber.org/zap.Logger).Sync
+
+  govet:
+    enable-all: true
+    disable:
+      - shadow      # too noisy in table-driven tests
+      - fieldalignment
+
+  staticcheck:
+    checks:
+      - "all"
+      - "-ST1000" # package comment — not required for internal packages
+      - "-ST1003" # naming conventions — handled by gofmt/team style
+      - "-ST1020" # exported function comments — relaxed for now
+      - "-ST1021" # exported type comments — relaxed for now
+      - "-ST1022" # exported var comments — relaxed for now
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Test files: allow unused returns, unhandled errors in setup code.
+    - path: "_test\\.go"
+      linters:
+        - errcheck
+
+    # Migration runner and seed scripts perform intentional fire-and-forget ops.
+    - path: "internal/seeds/"
+      linters:
+        - errcheck
+
+    # main.go defers are intentional.
+    - path: "cmd/"
+      text: "Error return value of .* is not checked"
+      linters:
+        - errcheck

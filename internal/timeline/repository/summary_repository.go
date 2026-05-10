@@ -137,12 +137,7 @@ func (r *SummaryRepository) AggregateDailyFromDB(ctx context.Context, userID uui
 
 	result := make([]DailyAggregate, len(rows))
 	for i, r := range rows {
-		result[i] = DailyAggregate{
-			TransportMode:   r.TransportMode,
-			TotalKgCO2e:     r.TotalKgCO2e,
-			TotalDistanceKM: r.TotalDistanceKM,
-			ActivityCount:   r.ActivityCount,
-		}
+		result[i] = DailyAggregate(r)
 	}
 	return result, nil
 }
