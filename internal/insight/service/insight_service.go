@@ -2,27 +2,26 @@ package service
 
 import (
 	"context"
-	"time"
 
 	emidomain "github.com/dipu/atmos-core/internal/emission/domain"
 	insightdomain "github.com/dipu/atmos-core/internal/insight/domain"
+	"github.com/dipu/atmos-core/internal/insight/dto"
 	insightrepo "github.com/dipu/atmos-core/internal/insight/repository"
 	"github.com/dipu/atmos-core/internal/insight/rules"
+	timerepo "github.com/dipu/atmos-core/internal/timeline/repository"
 	"github.com/dipu/atmos-core/platform/eventbus"
-	"github.com/dipu/atmos-core/platform/logger"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 type InsightService struct {
-	repo       *insightrepo.InsightRepository
-	streakRule *rules.StreakRule
+	repo   *insightrepo.InsightRepository
+	engine *rules.Engine
 }
 
-func NewInsightService(repo *insightrepo.InsightRepository) *InsightService {
+func NewInsightService(repo *insightrepo.InsightRepository, summaryRepo *timerepo.SummaryRepository) *InsightService {
 	return &InsightService{
-		repo:       repo,
-		streakRule: rules.NewStreakRule(repo),
+		repo:   repo,
+		engine: rules.NewEngine(repo, summaryRepo),
 	}
 }
 
@@ -32,28 +31,30 @@ func (s *InsightService) HandleEmissionCalculated(ctx context.Context, event eve
 	if !ok {
 		return
 	}
-
-	s.evaluateRules(ctx, payload.UserID, payload.DateLocal)
+	s.engine.Evaluate(ctx, payload.UserID, payload.DateLocal)
 }
 
-func (s *InsightService) evaluateRules(ctx context.Context, userID uuid.UUID, date time.Time) {
-	insight, err := s.streakRule.Evaluate(ctx, userID, date)
-	if err != nil {
-		logger.L().Warn("streak rule evaluation failed", zap.Error(err))
-		return
-	}
-	if insight != nil {
-		if err := s.repo.Create(ctx, insight); err != nil {
-			logger.L().Error("failed to create insight", zap.Error(err))
-		}
-	}
-}
-
-func (s *InsightService) ListInsights(ctx context.Context, userID uuid.UUID, onlyUnread bool, limit, offset int) ([]insightdomain.Insight, error) {
+func (s *InsightService) ListInsights(ctx context.Context, userID uuid.UUID, onlyUnread bool, limit, offset int) (*dto.InsightsPage, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	return s.repo.ListForUser(ctx, userID, onlyUnread, limit, offset)
+
+	items, err := s.repo.ListForUser(ctx, userID, onlyUnread, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	total, err := s.repo.CountForUser(ctx, userID, onlyUnread)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.InsightsPage{
+		Items:  items,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
 }
 
 func (s *InsightService) GetInsight(ctx context.Context, id, userID uuid.UUID) (*insightdomain.Insight, error) {

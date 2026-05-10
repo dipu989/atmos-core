@@ -13,11 +13,14 @@ type InsightType string
 type PeriodType string
 
 const (
-	InsightStreak     InsightType = "streak"
-	InsightMilestone  InsightType = "milestone"
-	InsightComparison InsightType = "comparison"
-	InsightTip        InsightType = "tip"
-	InsightAnomaly    InsightType = "anomaly"
+	InsightStreak           InsightType = "streak"
+	InsightMilestone        InsightType = "milestone"
+	InsightComparison       InsightType = "comparison"
+	InsightTip              InsightType = "tip"
+	InsightAnomaly          InsightType = "anomaly"
+	InsightWeeklyComparison InsightType = "weekly_comparison"
+	InsightModeSpike        InsightType = "mode_spike"
+	InsightModeSummary      InsightType = "mode_summary"
 
 	PeriodDaily   PeriodType = "daily"
 	PeriodWeekly  PeriodType = "weekly"
