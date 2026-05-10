@@ -1,0 +1,19 @@
+# All files — default owner for everything not matched below
+*                                               @dipu989
+
+# Platform and infrastructure
+.github/                                        @dipu989
+k8s/                                            @dipu989
+Dockerfile                                      @dipu989
+Makefile                                        @dipu989
+
+# Go module
+go.mod                                          @dipu989
+go.sum                                          @dipu989
+
+# Core modules
+internal/                                       @dipu989
+cmd/                                            @dipu989
+config/                                         @dipu989
+platform/                                       @dipu989
+migrations/                                     @dipu989
