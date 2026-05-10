@@ -15,21 +15,20 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\
 
 PASS=0; FAIL=0
 
-pass() { echo -e "  ${GREEN}PASS${NC}  $*"; ((PASS++)); }
-fail() { echo -e "  ${RED}FAIL${NC}  $*"; ((FAIL++)); }
+pass() { echo -e "  ${GREEN}PASS${NC}  $*"; PASS=$((PASS + 1)); }
+fail() { echo -e "  ${RED}FAIL${NC}  $*"; FAIL=$((FAIL + 1)); }
 section() { echo -e "\n${BOLD}$*${NC}"; }
 
 # Run curl, capture HTTP status + body
 req() {
   local method="$1"; shift
   local url="$1";    shift
-  local extra=("$@")
 
   local tmp; tmp=$(mktemp)
   local status
   status=$(curl -s -o "$tmp" -w "%{http_code}" -X "$method" \
     -H "Content-Type: application/json" \
-    "${extra[@]}" \
+    "$@" \
     "$url")
   BODY=$(cat "$tmp"); rm -f "$tmp"
   HTTP_STATUS="$status"
@@ -66,7 +65,7 @@ assert_status 200 "GET /health"
 section "2. Auth — Register"
 
 req POST "${API}/auth/register" \
-  -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"${TEST_PASSWORD}\"}"
+  -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"${TEST_PASSWORD}\",\"display_name\":\"Smoke Tester\"}"
 assert_status 201 "POST /auth/register"
 
 # ── Auth — Login ──────────────────────────────────────────────────────────────
@@ -77,6 +76,7 @@ req POST "${API}/auth/login" \
 assert_status 200 "POST /auth/login"
 
 ACCESS_TOKEN=$(echo "$BODY" | grep -o '"access_token":"[^"]*"' | sed 's/"access_token":"//;s/"//')
+REFRESH_TOKEN=$(echo "$BODY" | grep -o '"refresh_token":"[^"]*"' | sed 's/"refresh_token":"//;s/"//')
 
 if [[ -z "$ACCESS_TOKEN" ]]; then
   fail "could not extract access_token from login response"
@@ -92,7 +92,7 @@ AUTH=(-H "Authorization: Bearer ${ACCESS_TOKEN}")
 section "4. Auth — Duplicate register (conflict)"
 
 req POST "${API}/auth/register" \
-  -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"${TEST_PASSWORD}\"}"
+  -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"${TEST_PASSWORD}\",\"display_name\":\"Smoke Tester\"}"
 assert_status 409 "POST /auth/register duplicate → 409"
 
 # ── Identity ──────────────────────────────────────────────────────────────────
@@ -168,8 +168,8 @@ assert_status 200 "GET /activities (paginated)"
 section "8. Timeline"
 
 TODAY=$(date -u +"%Y-%m-%d")
-THIS_MONDAY=$(date -u -v-$(date -u +%u)d +"%Y-%m-%d" 2>/dev/null || \
-              date -u -d "last monday" +"%Y-%m-%d" 2>/dev/null || \
+THIS_MONDAY=$(date -u -v-$(( $(date -u +%u) - 1 ))d +"%Y-%m-%d" 2>/dev/null || \
+              date -u -d "monday this week" +"%Y-%m-%d" 2>/dev/null || \
               echo "$TODAY")
 YEAR=$(date -u +"%Y")
 MONTH=$(date -u +"%m" | sed 's/^0//')
@@ -186,8 +186,9 @@ assert_status 200 "GET /timeline/monthly?year=$YEAR&month=$MONTH"
 # ── Auth — Logout ─────────────────────────────────────────────────────────────
 section "9. Auth — Logout"
 
-req POST "${API}/auth/logout" "${AUTH[@]}"
-assert_status 200 "POST /auth/logout"
+req POST "${API}/auth/logout" "${AUTH[@]}" \
+  -d "{\"refresh_token\":\"${REFRESH_TOKEN}\"}"
+assert_status 204 "POST /auth/logout"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""

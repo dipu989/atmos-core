@@ -63,7 +63,8 @@ source .env 2>/dev/null || true
 # ── 5. Start infrastructure ───────────────────────────────────────────────────
 echo ""
 echo "Starting infrastructure..."
-docker compose up -d postgres
+docker compose up -d --remove-orphans postgres || \
+  docker compose up -d --force-recreate postgres
 
 echo -n "  Waiting for PostgreSQL"
 for i in $(seq 1 30); do
