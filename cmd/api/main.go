@@ -104,7 +104,7 @@ func main() {
 	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus)
 	agg := timelineagg.NewAggregator(summaryRepo)
 	timelineSvc := timelineservice.NewTimelineService(summaryRepo, agg)
-	insightSvc := insightservice.NewInsightService(insightRepo)
+	insightSvc := insightservice.NewInsightService(insightRepo, summaryRepo)
 
 	// --- Event subscriptions ---
 	bus.Subscribe(actdomain.EventActivityIngested, emissionSvc.HandleActivityIngested)

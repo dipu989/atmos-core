@@ -99,6 +99,15 @@ func (r *SummaryRepository) GetMonthly(ctx context.Context, userID uuid.UUID, ye
 	return &s, nil
 }
 
+func (r *SummaryRepository) ListWeeklyRange(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]domain.WeeklySummary, error) {
+	var summaries []domain.WeeklySummary
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND week_start BETWEEN ? AND ?", userID, from.Format("2006-01-02"), to.Format("2006-01-02")).
+		Order("week_start DESC").
+		Find(&summaries).Error
+	return summaries, err
+}
+
 // AggregateDaily re-computes daily totals directly from the emissions table.
 // This is the source of truth for upserts — not incremental arithmetic.
 type DailyAggregate struct {

@@ -54,6 +54,16 @@ func (r *InsightRepository) FindByID(ctx context.Context, id, userID uuid.UUID) 
 	return &insight, nil
 }
 
+func (r *InsightRepository) CountForUser(ctx context.Context, userID uuid.UUID, onlyUnread bool) (int64, error) {
+	var count int64
+	q := r.db.WithContext(ctx).Model(&domain.Insight{}).Where("user_id = ?", userID)
+	if onlyUnread {
+		q = q.Where("is_read = FALSE")
+	}
+	err := q.Count(&count).Error
+	return count, err
+}
+
 // CountConsecutiveDaysWithActivity returns the number of consecutive days (ending on or before endDate)
 // that the user has at least one processed activity.
 func (r *InsightRepository) CountConsecutiveDaysWithActivity(ctx context.Context, userID uuid.UUID, endDate time.Time) (int, error) {

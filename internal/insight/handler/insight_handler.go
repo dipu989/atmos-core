@@ -16,19 +16,43 @@ func NewInsightHandler(svc *service.InsightService) *InsightHandler {
 	return &InsightHandler{svc: svc}
 }
 
+// ListInsights godoc
+// @Summary     List insights
+// @Description Returns a paginated list of insights for the authenticated user
+// @Tags        insights
+// @Produce     json
+// @Param       unread query    bool   false "Return only unread insights"
+// @Param       limit  query    int    false "Page size (1-50, default 20)"
+// @Param       offset query    int    false "Offset for pagination"
+// @Success     200    {object} dto.InsightsPage
+// @Failure     401    {object} map[string]interface{}
+// @Failure     500    {object} map[string]interface{}
+// @Security    BearerAuth
+// @Router      /insights [get]
 func (h *InsightHandler) ListInsights(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 	onlyUnread := c.QueryBool("unread", false)
 	limit := c.QueryInt("limit", 20)
 	offset := c.QueryInt("offset", 0)
 
-	insights, err := h.svc.ListInsights(c.Context(), userID, onlyUnread, limit, offset)
+	page, err := h.svc.ListInsights(c.Context(), userID, onlyUnread, limit, offset)
 	if err != nil {
 		return response.InternalError(c, "failed to fetch insights")
 	}
-	return response.OK(c, insights)
+	return response.OK(c, page)
 }
 
+// GetInsight godoc
+// @Summary     Get insight
+// @Description Returns a single insight by ID
+// @Tags        insights
+// @Produce     json
+// @Param       id  path     string true "Insight UUID"
+// @Success     200 {object} domain.Insight
+// @Failure     400 {object} map[string]interface{}
+// @Failure     404 {object} map[string]interface{}
+// @Security    BearerAuth
+// @Router      /insights/{id} [get]
 func (h *InsightHandler) GetInsight(c *fiber.Ctx) error {
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
@@ -42,6 +66,17 @@ func (h *InsightHandler) GetInsight(c *fiber.Ctx) error {
 	return response.OK(c, insight)
 }
 
+// MarkRead godoc
+// @Summary     Mark insight as read
+// @Description Marks the given insight as read for the authenticated user
+// @Tags        insights
+// @Produce     json
+// @Param       id  path string true "Insight UUID"
+// @Success     204
+// @Failure     400 {object} map[string]interface{}
+// @Failure     500 {object} map[string]interface{}
+// @Security    BearerAuth
+// @Router      /insights/{id}/read [patch]
 func (h *InsightHandler) MarkRead(c *fiber.Ctx) error {
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
