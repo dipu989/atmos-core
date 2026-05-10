@@ -1,11 +1,11 @@
-# Atmos Core 
+<h1 align="center">Atmos Core</h1>
 
-Personal environmental telemetry and carbon intelligence backend.
+<img width="1983" height="793" alt="atmos-backend-image" src="https://github.com/user-attachments/assets/d102a95b-6936-40d3-bf1c-5a9011a35ef9" />
 
 ## Why behind this project?
 I’ve been fascinated by recent Climate Tech projects that focus on carbon capture and finding hundreds of different ways to utilize captured carbon. That got me thinking — why not start with tracking carbon emissions at an individual level?
 
-This project is an attempt to visualize the impact each of us has on the planet by tracking the aspects of our carbon footprint that can realistically be measured. 
+This project is an attempt to visualize the impact each of us has on the planet by tracking the aspects of our carbon footprint that can realistically be measured, eventually evolving into a personal environmental telemetry and carbon intelligence platform.
 
 ## Stack
 
