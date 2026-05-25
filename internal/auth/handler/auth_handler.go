@@ -129,6 +129,39 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	return response.NoContent(c)
 }
 
+// GoogleTokenLogin godoc
+// @Summary     Google Sign-In (mobile)
+// @Description Verifies a Google ID token from the native mobile SDK and returns a JWT pair
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       body body     dto.GoogleTokenRequest true "Google ID token"
+// @Success     200  {object} dto.GoogleCallbackResponse
+// @Failure     400  {object} map[string]interface{}
+// @Failure     401  {object} map[string]interface{}
+// @Router      /auth/google/token [post]
+func (h *AuthHandler) GoogleTokenLogin(c *fiber.Ctx) error {
+	var req dto.GoogleTokenRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	user, pair, isNew, err := h.svc.HandleGoogleIDToken(c.Context(), req.IDToken)
+	if err != nil {
+		if errors.Is(err, service.ErrOAuthNotConfigured) {
+			return response.ServiceUnavailable(c, "Google OAuth is not configured")
+		}
+		return response.Unauthorized(c, "Google authentication failed")
+	}
+
+	return response.OK(c, dto.GoogleCallbackResponse{
+		User:         user,
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		IsNewUser:    isNew,
+	})
+}
+
 // GoogleLogin godoc
 // @Summary     Google OAuth — initiate login
 // @Description Redirects the client to Google's OAuth consent screen

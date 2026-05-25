@@ -145,6 +145,7 @@ func main() {
 	auth.Post("/login", authH.Login)
 	auth.Post("/logout", authH.Logout)
 	auth.Post("/token/refresh", authH.Refresh)
+	auth.Post("/google/token", authH.GoogleTokenLogin) // mobile: ID token from native SDK
 	auth.Get("/google/login", authH.GoogleLogin)
 	auth.Get("/google/callback", authH.GoogleCallback)
 

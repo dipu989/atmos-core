@@ -23,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/idtoken"
 	"gorm.io/gorm"
 )
 
@@ -188,6 +189,46 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (*i
 	// Update avatar from Google if not already set
 	if user.AvatarURL == nil && profile.Picture != "" {
 		user.AvatarURL = &profile.Picture
+		_ = s.userRepo.Update(ctx, user)
+	}
+
+	pair, err := s.issuePair(ctx, user.ID, nil)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return user, pair, isNew, nil
+}
+
+// HandleGoogleIDToken verifies a Google ID token issued by the native mobile
+// Sign-In SDK and returns a local user + JWT pair.
+// This is the mobile-first flow: the device obtains the ID token via the
+// Google Sign-In SDK, then sends it to POST /auth/google/token.
+func (s *AuthService) HandleGoogleIDToken(ctx context.Context, rawIDToken string) (*identitydomain.User, *TokenPair, bool, error) {
+	if s.googleOAuth == nil {
+		return nil, nil, false, ErrOAuthNotConfigured
+	}
+
+	payload, err := idtoken.Validate(ctx, rawIDToken, s.googleOAuth.ClientID)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("invalid google id token: %w", err)
+	}
+
+	sub, _ := payload.Claims["sub"].(string)
+	email, _ := payload.Claims["email"].(string)
+	name, _ := payload.Claims["name"].(string)
+	picture, _ := payload.Claims["picture"].(string)
+
+	if sub == "" || email == "" {
+		return nil, nil, false, errors.New("google id token missing required claims")
+	}
+
+	user, isNew, err := s.userRepo.FindOrCreateByOAuth(ctx, "google", sub, email, name)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	if user.AvatarURL == nil && picture != "" {
+		user.AvatarURL = &picture
 		_ = s.userRepo.Update(ctx, user)
 	}
 
