@@ -1,0 +1,83 @@
+# Discord notifications for PR lifecycle in atmos-core.
+# Requires repo secret: DISCORD_WEBHOOK_URL
+
+name: Discord — PR notifications
+
+on:
+  pull_request:
+    types: [opened, reopened, closed]
+    branches: [main]
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.action == 'opened' ||
+      github.event.action == 'reopened' ||
+      (github.event.action == 'closed' && github.event.pull_request.merged == true)
+    steps:
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          MERGER: ${{ github.event.pull_request.merged_by.login }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          if [ -z "${DISCORD_WEBHOOK_URL}" ]; then
+            echo "DISCORD_WEBHOOK_URL secret not set — skipping"
+            exit 0
+          fi
+
+          TASK_ID=$(echo "$BRANCH" | grep -oE 'T[0-9]{3}' | head -1 || true)
+          if [ -z "$TASK_ID" ]; then
+            TASK_ID=$(echo "$PR_TITLE" | grep -oE 'T[0-9]{3}' | head -1 || echo "N/A")
+          fi
+
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          if [ "$PR_ACTION" = "closed" ]; then
+            TITLE="✅ PR #${PR_NUMBER} merged: ${PR_TITLE}"
+            COLOR=3066993
+            EXTRA_FIELD=$(jq -n --arg v "$MERGER" '{name: "Merged by", value: $v, inline: true}')
+          else
+            DRAFT_NOTE=""
+            if [ "$IS_DRAFT" = "true" ]; then
+              DRAFT_NOTE=" (draft)"
+            fi
+            TITLE="📬 PR #${PR_NUMBER} opened${DRAFT_NOTE}: ${PR_TITLE}"
+            COLOR=3447003
+            EXTRA_FIELD=$(jq -n --arg v "$AUTHOR" '{name: "Author", value: $v, inline: true}')
+          fi
+
+          jq -n \
+            --arg title "$TITLE" \
+            --arg url "$PR_URL" \
+            --argjson color "$COLOR" \
+            --arg repo "atmos-core" \
+            --arg branch "$BRANCH" \
+            --arg task "$TASK_ID" \
+            --arg ts "$TIMESTAMP" \
+            --argjson extra "$EXTRA_FIELD" \
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                color: $color,
+                fields: [
+                  { name: "Repo", value: $repo, inline: true },
+                  { name: "Branch", value: ("`" + $branch + "`"), inline: true },
+                  { name: "Task", value: $task, inline: true },
+                  $extra
+                ],
+                timestamp: $ts
+              }]
+            }' | curl -sf -X POST "$DISCORD_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d @-
+
+          echo "Discord notified: ${PR_ACTION} PR #${PR_NUMBER}"
