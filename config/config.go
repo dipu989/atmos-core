@@ -17,8 +17,9 @@ type Config struct {
 }
 
 type AppConfig struct {
-	Env  string
-	Port string
+	Env         string
+	Port        string
+	FrontendURL string // APP_FRONTEND_URL — where to redirect after OAuth (e.g. https://atmosapp.dev)
 }
 
 type DBConfig struct {
@@ -51,8 +52,9 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Env:  getEnv("APP_ENV", "development"),
-			Port: getEnv("APP_PORT", "8080"),
+			Env:         getEnv("APP_ENV", "development"),
+			Port:        getEnv("APP_PORT", "8080"),
+			FrontendURL: getEnv("APP_FRONTEND_URL", "http://localhost:3000"),
 		},
 		DB: DBConfig{
 			Host:     mustEnv("DB_HOST"),

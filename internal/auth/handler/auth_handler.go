@@ -2,6 +2,8 @@ package handler
 
 import (
 	"errors"
+	"fmt"
+	"net/url"
 
 	"github.com/dipu/atmos-core/internal/auth/dto"
 	"github.com/dipu/atmos-core/internal/auth/service"
@@ -11,11 +13,12 @@ import (
 )
 
 type AuthHandler struct {
-	svc *service.AuthService
+	svc         *service.AuthService
+	frontendURL string // where to redirect after OAuth (e.g. https://atmosapp.dev)
 }
 
-func NewAuthHandler(svc *service.AuthService) *AuthHandler {
-	return &AuthHandler{svc: svc}
+func NewAuthHandler(svc *service.AuthService, frontendURL string) *AuthHandler {
+	return &AuthHandler{svc: svc, frontendURL: frontendURL}
 }
 
 // Register godoc
@@ -200,15 +203,14 @@ func (h *AuthHandler) GoogleLogin(c *fiber.Ctx) error {
 // @Failure     401   {object} map[string]interface{}
 // @Router      /auth/google/callback [get]
 func (h *AuthHandler) GoogleCallback(c *fiber.Ctx) error {
+	errRedirect := fmt.Sprintf("%s/login?error=oauth_failed", h.frontendURL)
+
 	code := c.Query("code")
 	state := c.Query("state")
 	expectedState := c.Cookies("oauth_state")
 
-	if code == "" || state == "" {
-		return response.BadRequest(c, "missing code or state parameter")
-	}
-	if state != expectedState {
-		return response.Unauthorized(c, "invalid OAuth state — possible CSRF attempt")
+	if code == "" || state == "" || state != expectedState {
+		return c.Redirect(errRedirect, fiber.StatusTemporaryRedirect)
 	}
 
 	// Clear the state cookie
@@ -218,18 +220,18 @@ func (h *AuthHandler) GoogleCallback(c *fiber.Ctx) error {
 		MaxAge: -1,
 	})
 
-	user, pair, isNew, err := h.svc.HandleGoogleCallback(c.Context(), code)
+	_, pair, _, err := h.svc.HandleGoogleCallback(c.Context(), code)
 	if err != nil {
-		if errors.Is(err, service.ErrOAuthNotConfigured) {
-			return response.ServiceUnavailable(c, "Google OAuth is not configured")
-		}
-		return response.Unauthorized(c, "Google authentication failed")
+		return c.Redirect(errRedirect, fiber.StatusTemporaryRedirect)
 	}
 
-	return response.OK(c, dto.GoogleCallbackResponse{
-		User:         user,
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
-		IsNewUser:    isNew,
-	})
+	// Redirect to frontend callback page with tokens in query params.
+	// Tokens are short-lived JWTs — the frontend strips them from the URL immediately.
+	redirectURL := fmt.Sprintf(
+		"%s/auth/callback?access_token=%s&refresh_token=%s",
+		h.frontendURL,
+		url.QueryEscape(pair.AccessToken),
+		url.QueryEscape(pair.RefreshToken),
+	)
+	return c.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 }
