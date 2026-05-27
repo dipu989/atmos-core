@@ -112,7 +112,7 @@ func main() {
 	bus.Subscribe(emidomain.EventEmissionCalculated, insightSvc.HandleEmissionCalculated)
 
 	// --- Handlers ---
-	authH := authhandler.NewAuthHandler(authSvc)
+	authH := authhandler.NewAuthHandler(authSvc, cfg.App.FrontendURL)
 	identityH := idhandler.NewIdentityHandler(identitySvc)
 	deviceH := devhandler.NewDeviceHandler(deviceSvc)
 	activityH := acthandler.NewActivityHandler(activitySvc)
