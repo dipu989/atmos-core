@@ -19,6 +19,9 @@ dist/
 .env.local
 .env.*.local
 
+# Local dev Docker Compose overrides — production EC2 must not have this
+docker-compose.override.yml
+
 # IDE
 .idea/
 .vscode/
