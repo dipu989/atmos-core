@@ -129,7 +129,7 @@ func main() {
 	// --- Global middleware ---
 	app.Use(recover.New())
 	app.Use(middleware.RequestID())
-	app.Use(middleware.CORS())
+	app.Use(middleware.CORS(cfg.App.CORSAllowOrigin))
 	app.Use(middleware.RateLimit())
 
 	// --- Health + Swagger (unauthenticated) ---
