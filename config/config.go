@@ -17,9 +17,10 @@ type Config struct {
 }
 
 type AppConfig struct {
-	Env         string
-	Port        string
-	FrontendURL string // APP_FRONTEND_URL — where to redirect after OAuth (e.g. https://atmosapp.dev)
+	Env             string
+	Port            string
+	FrontendURL     string // APP_FRONTEND_URL — where to redirect after OAuth (e.g. https://atmosapp.dev)
+	CORSAllowOrigin string // CORS_ALLOW_ORIGIN — required in production
 }
 
 type DBConfig struct {
@@ -50,11 +51,22 @@ type GoogleOAuthConfig struct {
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
+	env := getEnv("APP_ENV", "development")
+
+	corsOrigin := getEnv("CORS_ALLOW_ORIGIN", "")
+	if corsOrigin == "" {
+		if env == "production" {
+			return nil, fmt.Errorf("required environment variable %q is not set", "CORS_ALLOW_ORIGIN")
+		}
+		corsOrigin = "http://localhost:3000"
+	}
+
 	cfg := &Config{
 		App: AppConfig{
-			Env:         getEnv("APP_ENV", "development"),
-			Port:        getEnv("APP_PORT", "8080"),
-			FrontendURL: getEnv("APP_FRONTEND_URL", "http://localhost:3000"),
+			Env:             env,
+			Port:            getEnv("APP_PORT", "8080"),
+			FrontendURL:     getEnv("APP_FRONTEND_URL", "http://localhost:3000"),
+			CORSAllowOrigin: corsOrigin,
 		},
 		DB: DBConfig{
 			Host:     mustEnv("DB_HOST"),
