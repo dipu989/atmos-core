@@ -38,6 +38,9 @@ import (
 	emidomain "github.com/dipu/atmos-core/internal/emission/domain"
 	emirepo "github.com/dipu/atmos-core/internal/emission/repository"
 	emiservice "github.com/dipu/atmos-core/internal/emission/service"
+	gmailhandler "github.com/dipu/atmos-core/internal/gmail/handler"
+	gmailrepo "github.com/dipu/atmos-core/internal/gmail/repository"
+	gmailservice "github.com/dipu/atmos-core/internal/gmail/service"
 	idhandler "github.com/dipu/atmos-core/internal/identity/handler"
 	idrepo "github.com/dipu/atmos-core/internal/identity/repository"
 	idservice "github.com/dipu/atmos-core/internal/identity/service"
@@ -84,6 +87,9 @@ func main() {
 	emissionRepo := emirepo.NewEmissionRepository(db)
 	summaryRepo := timelinerepo.NewSummaryRepository(db)
 	insightRepo := insightrepo.NewInsightRepository(db)
+	gmailConnRepo := gmailrepo.NewConnectionRepository(db)
+	gmailLogRepo := gmailrepo.NewLogRepository(db)
+	gmailProvRepo := gmailrepo.NewProviderRepository(db)
 
 	// --- JWT ---
 	jwtManager := jwtpkg.NewManager(
@@ -105,6 +111,18 @@ func main() {
 	agg := timelineagg.NewAggregator(summaryRepo)
 	timelineSvc := timelineservice.NewTimelineService(summaryRepo, agg)
 	insightSvc := insightservice.NewInsightService(insightRepo, summaryRepo)
+	gmailSvc := gmailservice.NewGmailService(
+		gmailservice.Config{
+			ClientID:     cfg.Google.ClientID,
+			ClientSecret: cfg.Google.ClientSecret,
+			RedirectURL:  cfg.Google.GmailRedirectURL,
+			HMACSecret:   cfg.JWT.AccessSecret,
+		},
+		gmailConnRepo,
+		gmailLogRepo,
+		gmailProvRepo,
+		activitySvc,
+	)
 
 	// --- Event subscriptions ---
 	bus.Subscribe(actdomain.EventActivityIngested, emissionSvc.HandleActivityIngested)
@@ -118,6 +136,7 @@ func main() {
 	activityH := acthandler.NewActivityHandler(activitySvc)
 	timelineH := timelinehandler.NewTimelineHandler(timelineSvc)
 	insightH := insighthandler.NewInsightHandler(insightSvc)
+	gmailH := gmailhandler.NewGmailHandler(gmailSvc)
 
 	// --- Fiber app ---
 	app := fiber.New(fiber.Config{
@@ -177,6 +196,23 @@ func main() {
 	protected.Get("/insights", insightH.ListInsights)
 	protected.Get("/insights/:id", insightH.GetInsight)
 	protected.Patch("/insights/:id/read", insightH.MarkRead)
+
+	// Gmail email ingestion
+	// /gmail/connect  → starts OAuth (requires auth so we know the user)
+	// /gmail/callback → unauthenticated (Google redirects here with ?code=&state=)
+	protected.Get("/gmail/connect", gmailH.Connect)
+	protected.Get("/gmail/status", gmailH.Status)
+	protected.Delete("/gmail/disconnect", gmailH.Disconnect)
+	protected.Post("/gmail/sync", gmailH.Sync)
+	protected.Get("/gmail/logs", gmailH.Logs)
+	// Callback is unauthenticated — user is identified via signed state parameter.
+	api.Get("/gmail/callback", gmailH.Callback)
+
+	// --- Internal endpoints (cron-triggered, not user-facing) ---
+	// Called by Linux cron: POST /internal/gmail/sync-all
+	// Protected by X-Internal-Key header (INTERNAL_SYNC_KEY env var).
+	internal := app.Group("/internal", middleware.RequireInternalKey(cfg.App.InternalSyncKey))
+	internal.Post("/gmail/sync-all", gmailH.SyncAll)
 
 	// --- Graceful shutdown ---
 	quit := make(chan os.Signal, 1)

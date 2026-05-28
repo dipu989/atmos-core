@@ -1,0 +1,177 @@
+package handler
+
+import (
+	"errors"
+
+	"github.com/dipu/atmos-core/internal/gmail/dto"
+	"github.com/dipu/atmos-core/internal/gmail/service"
+	"github.com/dipu/atmos-core/platform/middleware"
+	"github.com/dipu/atmos-core/platform/response"
+	"github.com/gofiber/fiber/v2"
+)
+
+// GmailHandler exposes Gmail connect / sync endpoints.
+type GmailHandler struct {
+	svc *service.GmailService
+}
+
+func NewGmailHandler(svc *service.GmailService) *GmailHandler {
+	return &GmailHandler{svc: svc}
+}
+
+// Connect godoc
+// @Summary     Start Gmail OAuth flow
+// @Description Redirects the authenticated user to Google's consent page.
+//
+//	After granting permission, Google redirects back to /gmail/callback.
+//
+// @Tags        gmail
+// @Security    BearerAuth
+// @Success     302
+// @Failure     401 {object} map[string]interface{}
+// @Router      /gmail/connect [get]
+func (h *GmailHandler) Connect(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	authURL := h.svc.AuthURL(userID)
+	return c.Redirect(authURL, fiber.StatusFound)
+}
+
+// Callback godoc
+// @Summary     Gmail OAuth callback
+// @Description Exchanges the auth code for tokens and stores them.
+//
+//	Google redirects here after the user grants permission.
+//	On success, redirects back to the frontend.
+//
+// @Tags        gmail
+// @Param       state query string true "OAuth state"
+// @Param       code  query string true "OAuth code"
+// @Success     302
+// @Failure     400 {object} map[string]interface{}
+// @Router      /gmail/callback [get]
+func (h *GmailHandler) Callback(c *fiber.Ctx) error {
+	state := c.Query("state")
+	code := c.Query("code")
+	if state == "" || code == "" {
+		return response.BadRequest(c, "missing state or code")
+	}
+
+	_, err := h.svc.HandleCallback(c.Context(), state, code)
+	if err != nil {
+		return response.BadRequest(c, "gmail connect failed: "+err.Error())
+	}
+
+	// Redirect to the frontend's settings page.
+	return c.Redirect("/", fiber.StatusFound)
+}
+
+// Status godoc
+// @Summary     Gmail connection status
+// @Description Returns whether the user has connected their Gmail account.
+// @Tags        gmail
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} dto.ConnectionStatus
+// @Failure     401 {object} map[string]interface{}
+// @Router      /gmail/status [get]
+func (h *GmailHandler) Status(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	conn, err := h.svc.Status(c.Context(), userID)
+	if err != nil {
+		return response.InternalError(c, "could not fetch gmail status")
+	}
+	return response.OK(c, dto.ConnectionStatusFromDomain(conn))
+}
+
+// Disconnect godoc
+// @Summary     Disconnect Gmail
+// @Description Removes the stored Gmail OAuth tokens for the authenticated user.
+// @Tags        gmail
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string]interface{}
+// @Failure     401 {object} map[string]interface{}
+// @Router      /gmail/disconnect [delete]
+func (h *GmailHandler) Disconnect(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	if err := h.svc.Disconnect(c.Context(), userID); err != nil {
+		return response.InternalError(c, "could not disconnect gmail")
+	}
+	return response.OK(c, fiber.Map{"message": "gmail disconnected"})
+}
+
+// Sync godoc
+// @Summary     Trigger Gmail email sync
+// @Description Fetches recent ride-receipt emails, parses them, and ingests activities.
+//
+//	Safe to call multiple times — already-processed emails are skipped.
+//
+// @Tags        gmail
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} dto.SyncResponse
+// @Failure     401 {object} map[string]interface{}
+// @Failure     422 {object} map[string]interface{}
+// @Router      /gmail/sync [post]
+func (h *GmailHandler) Sync(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	result, err := h.svc.Sync(c.Context(), userID)
+	if err != nil {
+		if errors.Is(err, service.ErrNotConnected) {
+			return response.BadRequest(c, "gmail not connected — call /gmail/connect first")
+		}
+		return response.InternalError(c, "sync failed: "+err.Error())
+	}
+
+	return response.OK(c, dto.SyncResponse{
+		MessagesChecked: result.MessagesChecked,
+		Parsed:          result.Parsed,
+		Skipped:         result.Skipped,
+		Failed:          result.Failed,
+		Message:         "sync complete",
+	})
+}
+
+// SyncAll godoc
+// @Summary     Trigger Gmail sync for all users
+// @Description Internal endpoint called by the Linux cron job to sync Gmail for every
+//
+//	connected user. Protected by X-Internal-Key header. Applies a 23-hour
+//	cooldown per user so re-running the cron is always safe.
+//
+// @Tags        internal
+// @Produce     json
+// @Param       X-Internal-Key header string true "Internal shared secret"
+// @Success     200 {object} map[string]interface{}
+// @Failure     401 {object} map[string]interface{}
+// @Router      /internal/gmail/sync-all [post]
+func (h *GmailHandler) SyncAll(c *fiber.Ctx) error {
+	result := h.svc.SyncAll(c.Context())
+	return response.OK(c, result)
+}
+
+// Logs godoc
+// @Summary     Gmail ingestion history
+// @Description Returns a paginated list of emails we have processed (or attempted).
+// @Tags        gmail
+// @Produce     json
+// @Security    BearerAuth
+// @Param       limit  query int false "Page size (default 50)"
+// @Param       offset query int false "Page offset (default 0)"
+// @Success     200 {object} dto.LogsPage
+// @Failure     401 {object} map[string]interface{}
+// @Router      /gmail/logs [get]
+func (h *GmailHandler) Logs(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	limit := c.QueryInt("limit", 50)
+	offset := c.QueryInt("offset", 0)
+	if limit < 1 || limit > 100 {
+		limit = 50
+	}
+
+	logs, total, err := h.svc.Logs(c.Context(), userID, limit, offset)
+	if err != nil {
+		return response.InternalError(c, "could not fetch logs")
+	}
+	return response.OK(c, dto.LogsPage{Logs: logs, Total: total, Limit: limit, Offset: offset})
+}
