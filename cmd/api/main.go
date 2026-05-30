@@ -58,6 +58,7 @@ import (
 	jwtpkg "github.com/dipu/atmos-core/platform/jwt"
 	"github.com/dipu/atmos-core/platform/logger"
 	"github.com/dipu/atmos-core/platform/middleware"
+	"github.com/dipu/atmos-core/platform/response"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	fiberSwagger "github.com/swaggo/fiber-swagger"
@@ -119,7 +120,7 @@ func main() {
 			FrontendURL:        cfg.App.FrontendURL,
 		},
 	)
-	identitySvc := idservice.NewIdentityService(userRepo)
+	identitySvc := idservice.NewIdentityService(userRepo, tokenRepo)
 	deviceSvc := devservice.NewDeviceService(deviceRepo)
 	activitySvc := actservice.NewActivityService(activityRepo, bus)
 	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus)
@@ -190,6 +191,7 @@ func main() {
 
 	protected.Get("/users/me", identityH.GetMe)
 	protected.Put("/users/me", identityH.UpdateMe)
+	protected.Delete("/users/me", identityH.DeleteAccount)
 	protected.Get("/users/me/preferences", identityH.GetPreferences)
 	protected.Put("/users/me/preferences", identityH.UpdatePreferences)
 
@@ -230,6 +232,13 @@ func main() {
 	// Protected by X-Internal-Key header (INTERNAL_SYNC_KEY env var).
 	internal := app.Group("/internal", middleware.RequireInternalKey(cfg.App.InternalSyncKey))
 	internal.Post("/gmail/sync-all", gmailH.SyncAll)
+	internal.Post("/users/purge-deleted", func(c *fiber.Ctx) error {
+		n, err := identitySvc.PurgeDeletedAccounts(c.Context())
+		if err != nil {
+			return response.InternalError(c, "purge failed: "+err.Error())
+		}
+		return response.OK(c, fiber.Map{"purged": n})
+	})
 
 	// --- Graceful shutdown ---
 	quit := make(chan os.Signal, 1)

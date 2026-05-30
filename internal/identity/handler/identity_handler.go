@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+
 	"github.com/dipu/atmos-core/internal/identity/dto"
 	"github.com/dipu/atmos-core/internal/identity/service"
 	"github.com/dipu/atmos-core/platform/middleware"
@@ -15,6 +17,50 @@ type IdentityHandler struct {
 
 func NewIdentityHandler(svc *service.IdentityService) *IdentityHandler {
 	return &IdentityHandler{svc: svc}
+}
+
+// DeleteAccount godoc
+// @Summary     Delete account
+// @Description Soft-deletes the authenticated user's account.
+//
+//	The account enters a 7-day grace period during which it can be recovered
+//	by simply logging in again. After 7 days, all data is permanently erased.
+//
+//	Email+password accounts: supply current password in "password" field.
+//	OAuth-only accounts: supply the exact string "delete my account" in "confirmation" field.
+//
+// @Tags        users
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       body body     dto.DeleteAccountRequest true "Confirmation payload"
+// @Success     200  {object} map[string]interface{}
+// @Failure     400  {object} map[string]interface{}
+// @Failure     401  {object} map[string]interface{}
+// @Router      /users/me [delete]
+func (h *IdentityHandler) DeleteAccount(c *fiber.Ctx) error {
+	var req dto.DeleteAccountRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	userID := middleware.CurrentUserID(c)
+	if err := h.svc.DeleteAccount(c.Context(), userID, req.Password, req.Confirmation); err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidPassword):
+			return response.BadRequest(c, "incorrect password")
+		case errors.Is(err, service.ErrInvalidConfirmation):
+			return response.BadRequest(c, `confirmation must be the exact string "delete my account"`)
+		case errors.Is(err, service.ErrNotFound):
+			return response.NotFound(c, "user not found")
+		default:
+			return response.InternalError(c, "could not delete account")
+		}
+	}
+
+	return response.OK(c, fiber.Map{
+		"message": "your account has been scheduled for deletion — you have 7 days to log back in and recover it",
+	})
 }
 
 // GetMe godoc

@@ -8,6 +8,14 @@ type UpdateProfileRequest struct {
 	AvatarURL   *string `json:"avatar_url"   validate:"omitempty,url"`
 }
 
+// DeleteAccountRequest is the body for DELETE /users/me.
+// Email+password accounts must supply their current password.
+// OAuth-only accounts (no password) must supply the exact confirmation string.
+type DeleteAccountRequest struct {
+	Password     string `json:"password"`
+	Confirmation string `json:"confirmation"`
+}
+
 // UpdatePreferencesRequest is the body for PUT /users/me/preferences.
 // String fields use empty string as "not provided" so oneof validation fires correctly.
 // Bool fields use pointers to distinguish "not provided" from false.
