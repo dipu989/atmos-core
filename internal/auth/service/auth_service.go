@@ -29,11 +29,11 @@ import (
 )
 
 var (
-	ErrEmailTaken          = errors.New("email already registered")
-	ErrInvalidCredentials  = errors.New("invalid email or password")
-	ErrInvalidToken        = errors.New("invalid or expired refresh token")
-	ErrOAuthNotConfigured  = errors.New("google OAuth is not configured")
-	ErrInvalidResetToken   = errors.New("invalid or expired password reset token")
+	ErrEmailTaken         = errors.New("email already registered")
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrInvalidToken       = errors.New("invalid or expired refresh token")
+	ErrOAuthNotConfigured = errors.New("google OAuth is not configured")
+	ErrInvalidResetToken  = errors.New("invalid or expired password reset token")
 )
 
 type TokenPair struct {
@@ -42,13 +42,13 @@ type TokenPair struct {
 }
 
 type AuthService struct {
-	userRepo       *identityrepo.UserRepository
-	tokenRepo      *authrepo.TokenRepository
-	resetRepo      *authrepo.PasswordResetRepository
-	jwtManager     *jwt.Manager
-	emailSender    email.Sender
-	frontendURL    string
-	googleOAuth    *oauth2.Config // nil when Google credentials are not set
+	userRepo    *identityrepo.UserRepository
+	tokenRepo   *authrepo.TokenRepository
+	resetRepo   *authrepo.PasswordResetRepository
+	jwtManager  *jwt.Manager
+	emailSender email.Sender
+	frontendURL string
+	googleOAuth *oauth2.Config // nil when Google credentials are not set
 }
 
 type Config struct {
