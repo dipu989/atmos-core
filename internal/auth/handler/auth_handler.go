@@ -165,6 +165,56 @@ func (h *AuthHandler) GoogleTokenLogin(c *fiber.Ctx) error {
 	})
 }
 
+// ForgotPassword godoc
+// @Summary     Request a password reset email
+// @Description Sends a reset link to the given email if an account exists.
+//
+//	Always returns 200 — the response never reveals whether the email is registered.
+//
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       body body     dto.ForgotPasswordRequest true "Email address"
+// @Success     200  {object} map[string]interface{}
+// @Failure     400  {object} map[string]interface{}
+// @Router      /auth/forgot-password [post]
+func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
+	var req dto.ForgotPasswordRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
+	}
+	// Ignore the error — we never reveal whether the email exists.
+	_ = h.svc.ForgotPassword(c.Context(), req.Email)
+	return response.OK(c, fiber.Map{"message": "if that email is registered, a reset link is on its way"})
+}
+
+// ResetPassword godoc
+// @Summary     Reset password using a token
+// @Description Validates the token from the reset email and sets a new password.
+//
+//	On success, all existing sessions are revoked — the user must log in again.
+//
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       body body     dto.ResetPasswordRequest true "Token and new password"
+// @Success     200  {object} map[string]interface{}
+// @Failure     400  {object} map[string]interface{}
+// @Router      /auth/reset-password [post]
+func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
+	var req dto.ResetPasswordRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
+	}
+	if err := h.svc.ResetPassword(c.Context(), req.Token, req.Password); err != nil {
+		if errors.Is(err, service.ErrInvalidResetToken) {
+			return response.BadRequest(c, "invalid or expired reset token")
+		}
+		return response.InternalError(c, "could not reset password")
+	}
+	return response.OK(c, fiber.Map{"message": "password updated — please log in again"})
+}
+
 // GoogleLogin godoc
 // @Summary     Google OAuth — initiate login
 // @Description Redirects the client to Google's OAuth consent screen
