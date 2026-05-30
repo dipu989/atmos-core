@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
@@ -52,6 +53,7 @@ import (
 	timelinerepo "github.com/dipu/atmos-core/internal/timeline/repository"
 	timelineservice "github.com/dipu/atmos-core/internal/timeline/service"
 	"github.com/dipu/atmos-core/platform/database"
+	"github.com/dipu/atmos-core/platform/email"
 	"github.com/dipu/atmos-core/platform/eventbus"
 	jwtpkg "github.com/dipu/atmos-core/platform/jwt"
 	"github.com/dipu/atmos-core/platform/logger"
@@ -79,9 +81,16 @@ func main() {
 
 	bus := eventbus.NewInMemoryBus()
 
+	// --- Email sender ---
+	emailSender, err := email.NewSESSender(context.Background(), cfg.Email.Region, cfg.Email.FromAddr)
+	if err != nil {
+		log.Fatal("SES client init failed", zap.Error(err))
+	}
+
 	// --- Repositories ---
 	userRepo := idrepo.NewUserRepository(db)
 	tokenRepo := authrepo.NewTokenRepository(db)
+	resetRepo := authrepo.NewPasswordResetRepository(db)
 	deviceRepo := devrepo.NewDeviceRepository(db)
 	activityRepo := actrepo.NewActivityRepository(db)
 	emissionRepo := emirepo.NewEmissionRepository(db)
@@ -101,8 +110,14 @@ func main() {
 
 	// --- Services ---
 	authSvc := authservice.NewAuthService(
-		userRepo, tokenRepo, jwtManager,
-		cfg.Google.ClientID, cfg.Google.ClientSecret, cfg.Google.RedirectURL,
+		userRepo, tokenRepo, resetRepo, jwtManager,
+		authservice.Config{
+			GoogleClientID:     cfg.Google.ClientID,
+			GoogleClientSecret: cfg.Google.ClientSecret,
+			GoogleRedirectURL:  cfg.Google.RedirectURL,
+			EmailSender:        emailSender,
+			FrontendURL:        cfg.App.FrontendURL,
+		},
 	)
 	identitySvc := idservice.NewIdentityService(userRepo)
 	deviceSvc := devservice.NewDeviceService(deviceRepo)
@@ -167,6 +182,8 @@ func main() {
 	auth.Post("/google/token", authH.GoogleTokenLogin) // mobile: ID token from native SDK
 	auth.Get("/google/login", authH.GoogleLogin)
 	auth.Get("/google/callback", authH.GoogleCallback)
+	auth.Post("/forgot-password", authH.ForgotPassword)
+	auth.Post("/reset-password", authH.ResetPassword)
 
 	// Protected
 	protected := api.Use(middleware.RequireAuth(jwtManager))

@@ -17,6 +17,7 @@ import (
 	authrepo "github.com/dipu/atmos-core/internal/auth/repository"
 	identitydomain "github.com/dipu/atmos-core/internal/identity/domain"
 	identityrepo "github.com/dipu/atmos-core/internal/identity/repository"
+	"github.com/dipu/atmos-core/platform/email"
 	"github.com/dipu/atmos-core/platform/jwt"
 	"github.com/dipu/atmos-core/platform/uuid"
 	googleuuid "github.com/google/uuid"
@@ -28,10 +29,11 @@ import (
 )
 
 var (
-	ErrEmailTaken         = errors.New("email already registered")
-	ErrInvalidCredentials = errors.New("invalid email or password")
-	ErrInvalidToken       = errors.New("invalid or expired refresh token")
-	ErrOAuthNotConfigured = errors.New("google OAuth is not configured")
+	ErrEmailTaken          = errors.New("email already registered")
+	ErrInvalidCredentials  = errors.New("invalid email or password")
+	ErrInvalidToken        = errors.New("invalid or expired refresh token")
+	ErrOAuthNotConfigured  = errors.New("google OAuth is not configured")
+	ErrInvalidResetToken   = errors.New("invalid or expired password reset token")
 )
 
 type TokenPair struct {
@@ -40,28 +42,43 @@ type TokenPair struct {
 }
 
 type AuthService struct {
-	userRepo    *identityrepo.UserRepository
-	tokenRepo   *authrepo.TokenRepository
-	jwtManager  *jwt.Manager
-	googleOAuth *oauth2.Config // nil when Google credentials are not set
+	userRepo       *identityrepo.UserRepository
+	tokenRepo      *authrepo.TokenRepository
+	resetRepo      *authrepo.PasswordResetRepository
+	jwtManager     *jwt.Manager
+	emailSender    email.Sender
+	frontendURL    string
+	googleOAuth    *oauth2.Config // nil when Google credentials are not set
+}
+
+type Config struct {
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+	EmailSender        email.Sender
+	FrontendURL        string
 }
 
 func NewAuthService(
 	userRepo *identityrepo.UserRepository,
 	tokenRepo *authrepo.TokenRepository,
+	resetRepo *authrepo.PasswordResetRepository,
 	jwtManager *jwt.Manager,
-	googleClientID, googleClientSecret, googleRedirectURL string,
+	cfg Config,
 ) *AuthService {
 	svc := &AuthService{
-		userRepo:   userRepo,
-		tokenRepo:  tokenRepo,
-		jwtManager: jwtManager,
+		userRepo:    userRepo,
+		tokenRepo:   tokenRepo,
+		resetRepo:   resetRepo,
+		jwtManager:  jwtManager,
+		emailSender: cfg.EmailSender,
+		frontendURL: cfg.FrontendURL,
 	}
-	if googleClientID != "" && googleClientSecret != "" {
+	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		svc.googleOAuth = &oauth2.Config{
-			ClientID:     googleClientID,
-			ClientSecret: googleClientSecret,
-			RedirectURL:  googleRedirectURL,
+			ClientID:     cfg.GoogleClientID,
+			ClientSecret: cfg.GoogleClientSecret,
+			RedirectURL:  cfg.GoogleRedirectURL,
 			Scopes:       []string{"openid", "email", "profile"},
 			Endpoint:     google.Endpoint,
 		}
@@ -239,6 +256,89 @@ func (s *AuthService) HandleGoogleIDToken(ctx context.Context, rawIDToken string
 	return user, pair, isNew, nil
 }
 
+// ── Password reset ────────────────────────────────────────────────────────────
+
+const resetTokenTTL = time.Hour
+
+// ForgotPassword generates a reset token and emails the link to the user.
+// Always returns nil — we never reveal whether the email exists.
+func (s *AuthService) ForgotPassword(ctx context.Context, emailAddr string) error {
+	user, err := s.userRepo.FindByEmail(ctx, emailAddr)
+	if err != nil || user == nil {
+		// Return nil so callers can't enumerate registered emails.
+		return nil
+	}
+	// OAuth-only accounts have no password — silently skip.
+	if user.PasswordHash == nil {
+		return nil
+	}
+
+	// Invalidate any existing unused tokens for this user.
+	_ = s.resetRepo.InvalidatePrevious(ctx, user.ID)
+
+	// Generate a 32-byte cryptographically random token.
+	raw, err := generateResetToken()
+	if err != nil {
+		return fmt.Errorf("forgot password: generate token: %w", err)
+	}
+
+	record := &authdomain.PasswordResetToken{
+		ID:        uuid.New(),
+		UserID:    user.ID,
+		TokenHash: hashToken(raw),
+		ExpiresAt: time.Now().Add(resetTokenTTL).UTC(),
+	}
+	if err := s.resetRepo.Create(ctx, record); err != nil {
+		return fmt.Errorf("forgot password: save token: %w", err)
+	}
+
+	resetLink := fmt.Sprintf("%s/reset-password?token=%s", s.frontendURL, raw)
+	return s.emailSender.Send(ctx, email.Message{
+		To:      emailAddr,
+		Subject: "Reset your Atmos password",
+		HTML:    passwordResetHTML(user.DisplayName, resetLink),
+		Text:    passwordResetText(user.DisplayName, resetLink),
+	})
+}
+
+// ResetPassword validates the token and sets a new password.
+// On success, all refresh tokens for the user are revoked (force re-login everywhere).
+func (s *AuthService) ResetPassword(ctx context.Context, rawToken, newPassword string) error {
+	record, err := s.resetRepo.FindByHash(ctx, hashToken(rawToken))
+	if err != nil {
+		return fmt.Errorf("reset password: lookup token: %w", err)
+	}
+	if record == nil || !record.IsValid() {
+		return ErrInvalidResetToken
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("reset password: hash password: %w", err)
+	}
+
+	user, err := s.userRepo.FindByID(ctx, record.UserID)
+	if err != nil || user == nil {
+		return ErrInvalidResetToken
+	}
+
+	hashStr := string(hash)
+	user.PasswordHash = &hashStr
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return fmt.Errorf("reset password: update user: %w", err)
+	}
+
+	// Consume the token so it cannot be reused.
+	if err := s.resetRepo.MarkUsed(ctx, record.ID); err != nil {
+		return fmt.Errorf("reset password: mark token used: %w", err)
+	}
+
+	// Revoke all active refresh tokens — user must log in again on all devices.
+	_ = s.tokenRepo.RevokeAllForUser(ctx, record.UserID)
+
+	return nil
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 func (s *AuthService) issuePair(ctx context.Context, userID googleuuid.UUID, deviceID *googleuuid.UUID) (*TokenPair, error) {
@@ -271,6 +371,39 @@ func (s *AuthService) issuePair(ctx context.Context, userID googleuuid.UUID, dev
 func hashToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
+}
+
+func generateResetToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func passwordResetHTML(name, link string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;max-width:520px;margin:40px auto;color:#1a1a1a">
+  <h2 style="margin-bottom:8px">Reset your password</h2>
+  <p>Hi %s,</p>
+  <p>We received a request to reset your Atmos password. Click the button below to set a new one. This link expires in <strong>1 hour</strong>.</p>
+  <p style="margin:32px 0">
+    <a href="%s" style="background:#16a34a;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+      Reset password
+    </a>
+  </p>
+  <p style="color:#666;font-size:13px">If you didn't request this, you can safely ignore this email — your password won't change.</p>
+  <p style="color:#666;font-size:13px">Or copy this link: %s</p>
+</body>
+</html>`, name, link, link)
+}
+
+func passwordResetText(name, link string) string {
+	return fmt.Sprintf(
+		"Hi %s,\n\nReset your Atmos password here (link expires in 1 hour):\n%s\n\nIf you didn't request this, ignore this email.",
+		name, link,
+	)
 }
 
 func generateState() (string, error) {

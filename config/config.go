@@ -14,6 +14,12 @@ type Config struct {
 	DB     DBConfig
 	JWT    JWTConfig
 	Google GoogleOAuthConfig
+	Email  EmailConfig
+}
+
+type EmailConfig struct {
+	Region   string // AWS_REGION — e.g. "ap-south-1"
+	FromAddr string // SES_FROM_ADDRESS — e.g. "Atmos <noreply@atmosapp.dev>"
 }
 
 type AppConfig struct {
@@ -93,6 +99,10 @@ func Load() (*Config, error) {
 			ClientSecret:     getEnv("GOOGLE_CLIENT_SECRET", ""),
 			RedirectURL:      getEnv("GOOGLE_REDIRECT_URL", ""),
 			GmailRedirectURL: getEnv("GOOGLE_GMAIL_REDIRECT_URL", ""),
+		},
+		Email: EmailConfig{
+			Region:   getEnv("AWS_REGION", "ap-south-1"),
+			FromAddr: getEnv("SES_FROM_ADDRESS", "Atmos <noreply@atmosapp.dev>"),
 		},
 	}
 
