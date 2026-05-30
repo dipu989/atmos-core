@@ -124,14 +124,38 @@ func (s *AuthService) Register(ctx context.Context, email, password, displayName
 
 func (s *AuthService) Login(ctx context.Context, email, password string, deviceID *googleuuid.UUID) (*TokenPair, error) {
 	user, err := s.userRepo.FindByEmail(ctx, email)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrInvalidCredentials
-		}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
+
+	// If not found as active, check whether it's a soft-deleted account within grace period.
+	if user == nil {
+		user, err = s.userRepo.FindByEmailUnscoped(ctx, email)
+		if err != nil {
+			return nil, err
+		}
+		if user == nil || user.DeletedAt == nil {
+			return nil, ErrInvalidCredentials
+		}
+		// Outside the 7-day grace period — treat as gone.
+		if time.Since(*user.DeletedAt) > 7*24*time.Hour {
+			return nil, ErrInvalidCredentials
+		}
+		// Inside grace period — verify password then restore.
+		if user.PasswordHash == nil {
+			return nil, ErrInvalidCredentials
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
+			return nil, ErrInvalidCredentials
+		}
+		if err := s.userRepo.Restore(ctx, user.ID); err != nil {
+			return nil, fmt.Errorf("restore account: %w", err)
+		}
+		return s.issuePair(ctx, user.ID, deviceID)
+	}
+
 	if user.PasswordHash == nil {
-		// OAuth-only account — no password set
+		// OAuth-only account — no password set.
 		return nil, ErrInvalidCredentials
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
@@ -201,6 +225,16 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (*i
 	user, isNew, err := s.userRepo.FindOrCreateByOAuth(ctx, "google", profile.ID, profile.Email, profile.Name)
 	if err != nil {
 		return nil, nil, false, err
+	}
+
+	// If the matched account is soft-deleted and within the grace period, restore it.
+	if user != nil && user.DeletedAt != nil {
+		if time.Since(*user.DeletedAt) <= 7*24*time.Hour {
+			_ = s.userRepo.Restore(ctx, user.ID)
+			user.DeletedAt = nil
+		} else {
+			return nil, nil, false, ErrInvalidCredentials
+		}
 	}
 
 	// Update avatar from Google if not already set

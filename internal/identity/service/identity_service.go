@@ -3,22 +3,33 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
+	authrepo "github.com/dipu/atmos-core/internal/auth/repository"
 	"github.com/dipu/atmos-core/internal/identity/domain"
 	"github.com/dipu/atmos-core/internal/identity/repository"
 	pkguuid "github.com/dipu/atmos-core/platform/uuid"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
-var ErrNotFound = errors.New("user not found")
+var (
+	ErrNotFound            = errors.New("user not found")
+	ErrInvalidPassword     = errors.New("incorrect password")
+	ErrInvalidConfirmation = errors.New("confirmation text does not match")
+)
+
+// deletionGracePeriod is how long a soft-deleted account can be recovered.
+const deletionGracePeriod = 7 * 24 * time.Hour
 
 type IdentityService struct {
-	repo *repository.UserRepository
+	repo      *repository.UserRepository
+	tokenRepo *authrepo.TokenRepository
 }
 
-func NewIdentityService(repo *repository.UserRepository) *IdentityService {
-	return &IdentityService{repo: repo}
+func NewIdentityService(repo *repository.UserRepository, tokenRepo *authrepo.TokenRepository) *IdentityService {
+	return &IdentityService{repo: repo, tokenRepo: tokenRepo}
 }
 
 // ── Profile ───────────────────────────────────────────────────────────────────
@@ -96,6 +107,48 @@ func (s *IdentityService) UpdatePreferences(ctx context.Context, userID uuid.UUI
 		return nil, err
 	}
 	return prefs, nil
+}
+
+// ── Account deletion ──────────────────────────────────────────────────────────
+
+// DeleteAccount soft-deletes the user's account and revokes all their sessions.
+// Email+password accounts must supply their current password.
+// OAuth-only accounts must supply the exact string "delete my account".
+func (s *IdentityService) DeleteAccount(ctx context.Context, userID uuid.UUID, password, confirmation string) error {
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil || user == nil {
+		return ErrNotFound
+	}
+
+	if user.PasswordHash != nil {
+		// Email+password account — verify password.
+		if password == "" {
+			return ErrInvalidPassword
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
+			return ErrInvalidPassword
+		}
+	} else {
+		// OAuth-only account — require explicit confirmation string.
+		if confirmation != "delete my account" {
+			return ErrInvalidConfirmation
+		}
+	}
+
+	if err := s.repo.SoftDelete(ctx, userID); err != nil {
+		return err
+	}
+
+	// Revoke all active sessions so the user is immediately logged out.
+	_ = s.tokenRepo.RevokeAllForUser(ctx, userID)
+	return nil
+}
+
+// PurgeDeletedAccounts hard-deletes accounts whose grace period has expired.
+// Safe to call repeatedly — idempotent. Returns count of purged accounts.
+func (s *IdentityService) PurgeDeletedAccounts(ctx context.Context) (int64, error) {
+	cutoff := time.Now().UTC().Add(-deletionGracePeriod)
+	return s.repo.PurgeDeleted(ctx, cutoff)
 }
 
 func (s *IdentityService) createDefaultPreferences(ctx context.Context, userID uuid.UUID) (*domain.UserPreferences, error) {

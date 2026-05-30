@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/dipu/atmos-core/internal/identity/domain"
 	"github.com/google/uuid"
@@ -94,6 +95,65 @@ func (r *UserRepository) FindOrCreateByOAuth(ctx context.Context, provider, prov
 	}
 
 	return user, created, nil
+}
+
+// SoftDelete sets deleted_at to now, marking the account for deferred deletion.
+func (r *UserRepository) SoftDelete(ctx context.Context, id uuid.UUID) error {
+	now := time.Now().UTC()
+	return r.db.WithContext(ctx).
+		Model(&domain.User{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Update("deleted_at", now).Error
+}
+
+// Restore clears deleted_at, recovering an account still within the grace period.
+func (r *UserRepository) Restore(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.User{}).
+		Where("id = ?", id).
+		Update("deleted_at", nil).Error
+}
+
+// FindByEmailUnscoped finds a user by email regardless of soft-delete status.
+// Used during login to detect and restore accounts within the grace period.
+func (r *UserRepository) FindByEmailUnscoped(ctx context.Context, email string) (*domain.User, error) {
+	var user domain.User
+	err := r.db.WithContext(ctx).
+		Where("email = ?", email).
+		First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &user, err
+}
+
+// FindByOAuthUnscoped finds a user linked to an OAuth provider regardless of soft-delete.
+func (r *UserRepository) FindByOAuthUnscoped(ctx context.Context, provider, providerUserID string) (*domain.User, error) {
+	var op domain.OAuthProvider
+	err := r.db.WithContext(ctx).
+		Where("provider = ? AND provider_user_id = ?", provider, providerUserID).
+		First(&op).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var user domain.User
+	err = r.db.WithContext(ctx).Where("id = ?", op.UserID).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &user, err
+}
+
+// PurgeDeleted hard-deletes all accounts whose deleted_at is older than the given cutoff.
+// Called by the daily cron job. Returns the number of accounts purged.
+func (r *UserRepository) PurgeDeleted(ctx context.Context, cutoff time.Time) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Where("deleted_at IS NOT NULL AND deleted_at < ?", cutoff).
+		Delete(&domain.User{})
+	return result.RowsAffected, result.Error
 }
 
 // ── Preferences ───────────────────────────────────────────────────────────────
