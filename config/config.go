@@ -21,6 +21,7 @@ type AppConfig struct {
 	Port            string
 	FrontendURL     string // APP_FRONTEND_URL — where to redirect after OAuth (e.g. https://atmosapp.dev)
 	CORSAllowOrigin string // CORS_ALLOW_ORIGIN — required in production
+	InternalSyncKey string // INTERNAL_SYNC_KEY — shared secret for /internal/* endpoints
 }
 
 type DBConfig struct {
@@ -43,9 +44,10 @@ type JWTConfig struct {
 }
 
 type GoogleOAuthConfig struct {
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
+	ClientID         string
+	ClientSecret     string
+	RedirectURL      string // For web Sign-In callback
+	GmailRedirectURL string // GOOGLE_GMAIL_REDIRECT_URL — for Gmail connect callback
 }
 
 func Load() (*Config, error) {
@@ -67,6 +69,7 @@ func Load() (*Config, error) {
 			Port:            getEnv("APP_PORT", "8080"),
 			FrontendURL:     getEnv("APP_FRONTEND_URL", "http://localhost:3000"),
 			CORSAllowOrigin: corsOrigin,
+			InternalSyncKey: getEnv("INTERNAL_SYNC_KEY", ""),
 		},
 		DB: DBConfig{
 			Host:     mustEnv("DB_HOST"),
@@ -86,9 +89,10 @@ func Load() (*Config, error) {
 			RefreshTokenTTL: getEnvDuration("JWT_REFRESH_TTL", 30*24*time.Hour),
 		},
 		Google: GoogleOAuthConfig{
-			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
-			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
-			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
+			ClientID:         getEnv("GOOGLE_CLIENT_ID", ""),
+			ClientSecret:     getEnv("GOOGLE_CLIENT_SECRET", ""),
+			RedirectURL:      getEnv("GOOGLE_REDIRECT_URL", ""),
+			GmailRedirectURL: getEnv("GOOGLE_GMAIL_REDIRECT_URL", ""),
 		},
 	}
 
