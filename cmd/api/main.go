@@ -153,6 +153,7 @@ func main() {
 	timelineH := timelinehandler.NewTimelineHandler(timelineSvc)
 	insightH := insighthandler.NewInsightHandler(insightSvc)
 	gmailH := gmailhandler.NewGmailHandler(gmailSvc)
+	providerH := gmailhandler.NewProviderHandler(gmailProvRepo)
 
 	// --- Fiber app ---
 	app := fiber.New(fiber.Config{
@@ -173,6 +174,10 @@ func main() {
 
 	// --- API v1 ---
 	api := app.Group("/api/v1")
+
+	// Public provider catalogue — no auth required
+	api.Get("/providers", providerH.ListActive)
+	api.Get("/providers/all", providerH.ListAll)
 
 	// Auth (stricter rate limit on these endpoints)
 	auth := api.Group("/auth", middleware.RateLimitStrict())
