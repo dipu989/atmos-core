@@ -149,10 +149,10 @@ func (h *ActivityHandler) ListActivities(c *fiber.Ctx) error {
 
 // UpdateActivity godoc
 // @Summary     Update an activity
-// @Description Partially updates a manual activity. Only transport_mode, distance_km,
+// @Description Partially updates an activity. Only transport_mode, distance_km,
 //
-//	duration_minutes, and started_at can be changed. Source and provider are immutable.
-//	Emission and timeline are recalculated automatically.
+//	duration_minutes, and started_at can be changed. Source and provider are
+//	immutable after ingestion. Emission and timeline are recalculated automatically.
 //
 // @Tags        activities
 // @Accept      json

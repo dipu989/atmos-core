@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	emidomain "github.com/dipu/atmos-core/internal/emission/domain"
 	"github.com/dipu/atmos-core/platform/eventbus"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type ActivityService struct {
@@ -121,10 +123,28 @@ type UpdateInput struct {
 
 // UpdateActivity applies a partial update to an existing activity and triggers
 // emission recalculation for any affected dates.
+// Returns ErrNotFound when the activity does not exist or belongs to another user.
+// Returns the unchanged activity when no fields are provided.
 func (s *ActivityService) UpdateActivity(ctx context.Context, id, userID uuid.UUID, input UpdateInput) (*actdomain.Activity, error) {
+	// Fast path: nothing to do.
+	if input.TransportMode == nil && input.DistanceKM == nil &&
+		input.DurationMinutes == nil && input.StartedAt == nil {
+		activity, err := s.repo.FindByID(ctx, id, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		return activity, nil
+	}
+
 	activity, err := s.repo.FindByID(ctx, id, userID)
 	if err != nil {
-		return nil, ErrNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
 	}
 
 	// Remember old date so we can recompute it if started_at changes.
@@ -194,7 +214,10 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, id, userID uuid.UU
 func (s *ActivityService) DeleteActivity(ctx context.Context, id, userID uuid.UUID) error {
 	activity, err := s.repo.FindByID(ctx, id, userID)
 	if err != nil {
-		return ErrNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		return err
 	}
 	dateLocal := activity.DateLocal
 
