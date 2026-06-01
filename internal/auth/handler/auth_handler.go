@@ -7,6 +7,7 @@ import (
 
 	"github.com/dipu/atmos-core/internal/auth/dto"
 	"github.com/dipu/atmos-core/internal/auth/service"
+	"github.com/dipu/atmos-core/platform/middleware"
 	"github.com/dipu/atmos-core/platform/response"
 	"github.com/dipu/atmos-core/platform/validator"
 	"github.com/gofiber/fiber/v2"
@@ -163,6 +164,59 @@ func (h *AuthHandler) GoogleTokenLogin(c *fiber.Ctx) error {
 		RefreshToken: pair.RefreshToken,
 		IsNewUser:    isNew,
 	})
+}
+
+// VerifyEmail godoc
+// @Summary     Verify email address
+// @Description Confirms ownership of the email address using the token from the
+//
+//	verification link. Safe to call multiple times — returns 200 even if already verified.
+//
+// @Tags        auth
+// @Accept      json
+// @Produce     json
+// @Param       body body     dto.VerifyEmailRequest true "Verification token"
+// @Success     200  {object} map[string]interface{}
+// @Failure     400  {object} map[string]interface{}
+// @Router      /auth/verify-email [post]
+func (h *AuthHandler) VerifyEmail(c *fiber.Ctx) error {
+	var req dto.VerifyEmailRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
+	}
+	if err := h.svc.VerifyEmail(c.Context(), req.Token); err != nil {
+		if errors.Is(err, service.ErrAlreadyVerified) {
+			return response.OK(c, fiber.Map{"message": "email already verified"})
+		}
+		if errors.Is(err, service.ErrInvalidVerificationToken) {
+			return response.BadRequest(c, "invalid or expired verification token")
+		}
+		return response.InternalError(c, "could not verify email")
+	}
+	return response.OK(c, fiber.Map{"message": "email verified successfully"})
+}
+
+// ResendVerification godoc
+// @Summary     Resend verification email
+// @Description Sends a fresh verification link to the authenticated user's email.
+//
+//	Returns 200 immediately if the email is already verified.
+//
+// @Tags        auth
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string]interface{}
+// @Failure     401 {object} map[string]interface{}
+// @Router      /auth/resend-verification [post]
+func (h *AuthHandler) ResendVerification(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	if err := h.svc.ResendVerification(c.Context(), userID); err != nil {
+		if errors.Is(err, service.ErrAlreadyVerified) {
+			return response.OK(c, fiber.Map{"message": "email already verified"})
+		}
+		return response.InternalError(c, "could not send verification email")
+	}
+	return response.OK(c, fiber.Map{"message": "verification email sent"})
 }
 
 // ForgotPassword godoc

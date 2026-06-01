@@ -29,11 +29,13 @@ import (
 )
 
 var (
-	ErrEmailTaken         = errors.New("email already registered")
-	ErrInvalidCredentials = errors.New("invalid email or password")
-	ErrInvalidToken       = errors.New("invalid or expired refresh token")
-	ErrOAuthNotConfigured = errors.New("google OAuth is not configured")
-	ErrInvalidResetToken  = errors.New("invalid or expired password reset token")
+	ErrEmailTaken               = errors.New("email already registered")
+	ErrInvalidCredentials       = errors.New("invalid email or password")
+	ErrInvalidToken             = errors.New("invalid or expired refresh token")
+	ErrOAuthNotConfigured       = errors.New("google OAuth is not configured")
+	ErrInvalidResetToken        = errors.New("invalid or expired password reset token")
+	ErrInvalidVerificationToken = errors.New("invalid or expired verification token")
+	ErrAlreadyVerified          = errors.New("email is already verified")
 )
 
 type TokenPair struct {
@@ -42,13 +44,14 @@ type TokenPair struct {
 }
 
 type AuthService struct {
-	userRepo    *identityrepo.UserRepository
-	tokenRepo   *authrepo.TokenRepository
-	resetRepo   *authrepo.PasswordResetRepository
-	jwtManager  *jwt.Manager
-	emailSender email.Sender
-	frontendURL string
-	googleOAuth *oauth2.Config // nil when Google credentials are not set
+	userRepo         *identityrepo.UserRepository
+	tokenRepo        *authrepo.TokenRepository
+	resetRepo        *authrepo.PasswordResetRepository
+	verificationRepo *authrepo.EmailVerificationRepository
+	jwtManager       *jwt.Manager
+	emailSender      email.Sender
+	frontendURL      string
+	googleOAuth      *oauth2.Config // nil when Google credentials are not set
 }
 
 type Config struct {
@@ -63,16 +66,18 @@ func NewAuthService(
 	userRepo *identityrepo.UserRepository,
 	tokenRepo *authrepo.TokenRepository,
 	resetRepo *authrepo.PasswordResetRepository,
+	verificationRepo *authrepo.EmailVerificationRepository,
 	jwtManager *jwt.Manager,
 	cfg Config,
 ) *AuthService {
 	svc := &AuthService{
-		userRepo:    userRepo,
-		tokenRepo:   tokenRepo,
-		resetRepo:   resetRepo,
-		jwtManager:  jwtManager,
-		emailSender: cfg.EmailSender,
-		frontendURL: cfg.FrontendURL,
+		userRepo:         userRepo,
+		tokenRepo:        tokenRepo,
+		resetRepo:        resetRepo,
+		verificationRepo: verificationRepo,
+		jwtManager:       jwtManager,
+		emailSender:      cfg.EmailSender,
+		frontendURL:      cfg.FrontendURL,
 	}
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" {
 		svc.googleOAuth = &oauth2.Config{
@@ -114,6 +119,16 @@ func (s *AuthService) Register(ctx context.Context, email, password, displayName
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, nil, err
 	}
+
+	// Send verification email asynchronously — a failure here should not
+	// block the registration response. The user can request a resend later.
+	go func() {
+		ctx2 := context.Background()
+		if err := s.sendVerificationEmail(ctx2, user); err != nil {
+			// Log but don't surface — registration already succeeded.
+			_ = err
+		}
+	}()
 
 	pair, err := s.issuePair(ctx, user.ID, nil)
 	if err != nil {
@@ -237,9 +252,18 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (*i
 		}
 	}
 
-	// Update avatar from Google if not already set
+	// Google has confirmed this email — mark it verified if not already.
+	needsSave := false
 	if user.AvatarURL == nil && profile.Picture != "" {
 		user.AvatarURL = &profile.Picture
+		needsSave = true
+	}
+	if !user.IsEmailVerified() {
+		now := time.Now().UTC()
+		user.EmailVerifiedAt = &now
+		needsSave = true
+	}
+	if needsSave {
 		_ = s.userRepo.Update(ctx, user)
 	}
 
@@ -278,8 +302,18 @@ func (s *AuthService) HandleGoogleIDToken(ctx context.Context, rawIDToken string
 		return nil, nil, false, err
 	}
 
+	// Google ID token confirms ownership — auto-verify if not already done.
+	needsSave := false
 	if user.AvatarURL == nil && picture != "" {
 		user.AvatarURL = &picture
+		needsSave = true
+	}
+	if !user.IsEmailVerified() {
+		now := time.Now().UTC()
+		user.EmailVerifiedAt = &now
+		needsSave = true
+	}
+	if needsSave {
 		_ = s.userRepo.Update(ctx, user)
 	}
 
@@ -288,6 +322,80 @@ func (s *AuthService) HandleGoogleIDToken(ctx context.Context, rawIDToken string
 		return nil, nil, false, err
 	}
 	return user, pair, isNew, nil
+}
+
+// ── Email verification ────────────────────────────────────────────────────────
+
+const verificationTokenTTL = 24 * time.Hour
+
+// VerifyEmail marks the user's email as verified using the token from the link.
+func (s *AuthService) VerifyEmail(ctx context.Context, rawToken string) error {
+	record, err := s.verificationRepo.FindByHash(ctx, hashToken(rawToken))
+	if err != nil {
+		return fmt.Errorf("verify email: lookup token: %w", err)
+	}
+	if record == nil || !record.IsValid() {
+		return ErrInvalidVerificationToken
+	}
+
+	user, err := s.userRepo.FindByID(ctx, record.UserID)
+	if err != nil || user == nil {
+		return ErrInvalidVerificationToken
+	}
+	if user.IsEmailVerified() {
+		_ = s.verificationRepo.MarkUsed(ctx, record.ID)
+		return ErrAlreadyVerified
+	}
+
+	now := time.Now().UTC()
+	user.EmailVerifiedAt = &now
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return fmt.Errorf("verify email: update user: %w", err)
+	}
+	return s.verificationRepo.MarkUsed(ctx, record.ID)
+}
+
+// ResendVerification sends a fresh verification email to the authenticated user.
+// Returns ErrAlreadyVerified if the email is already confirmed.
+func (s *AuthService) ResendVerification(ctx context.Context, userID googleuuid.UUID) error {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil || user == nil {
+		return fmt.Errorf("resend verification: user not found")
+	}
+	if user.IsEmailVerified() {
+		return ErrAlreadyVerified
+	}
+	return s.sendVerificationEmail(ctx, user)
+}
+
+// sendVerificationEmail generates a token and emails the verification link.
+// Called on registration and on resend requests.
+func (s *AuthService) sendVerificationEmail(ctx context.Context, user *identitydomain.User) error {
+	_ = s.verificationRepo.InvalidatePrevious(ctx, user.ID)
+
+	raw, err := generateResetToken() // reuse the same crypto/rand helper
+	if err != nil {
+		return fmt.Errorf("send verification email: generate token: %w", err)
+	}
+
+	id, _ := googleuuid.NewV7()
+	record := &authdomain.EmailVerificationToken{
+		ID:        id,
+		UserID:    user.ID,
+		TokenHash: hashToken(raw),
+		ExpiresAt: time.Now().Add(verificationTokenTTL).UTC(),
+	}
+	if err := s.verificationRepo.Create(ctx, record); err != nil {
+		return fmt.Errorf("send verification email: save token: %w", err)
+	}
+
+	link := fmt.Sprintf("%s/verify-email?token=%s", s.frontendURL, raw)
+	return s.emailSender.Send(ctx, email.Message{
+		To:      user.Email,
+		Subject: "Verify your Atmos email",
+		HTML:    verificationEmailHTML(user.DisplayName, link),
+		Text:    verificationEmailText(user.DisplayName, link),
+	})
 }
 
 // ── Password reset ────────────────────────────────────────────────────────────
@@ -436,6 +544,31 @@ func passwordResetHTML(name, link string) string {
 func passwordResetText(name, link string) string {
 	return fmt.Sprintf(
 		"Hi %s,\n\nReset your Atmos password here (link expires in 1 hour):\n%s\n\nIf you didn't request this, ignore this email.",
+		name, link,
+	)
+}
+
+func verificationEmailHTML(name, link string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;max-width:520px;margin:40px auto;color:#1a1a1a">
+  <h2 style="margin-bottom:8px">Verify your email</h2>
+  <p>Hi %s,</p>
+  <p>Thanks for joining Atmos! Click the button below to verify your email address. This link expires in <strong>24 hours</strong>.</p>
+  <p style="margin:32px 0">
+    <a href="%s" style="background:#16a34a;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+      Verify email
+    </a>
+  </p>
+  <p style="color:#666;font-size:13px">If you didn't create an Atmos account, you can safely ignore this email.</p>
+  <p style="color:#666;font-size:13px">Or copy this link: %s</p>
+</body>
+</html>`, name, link, link)
+}
+
+func verificationEmailText(name, link string) string {
+	return fmt.Sprintf(
+		"Hi %s,\n\nVerify your Atmos email here (link expires in 24 hours):\n%s\n\nIf you didn't create an account, ignore this email.",
 		name, link,
 	)
 }

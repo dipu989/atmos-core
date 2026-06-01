@@ -92,6 +92,7 @@ func main() {
 	userRepo := idrepo.NewUserRepository(db)
 	tokenRepo := authrepo.NewTokenRepository(db)
 	resetRepo := authrepo.NewPasswordResetRepository(db)
+	verificationRepo := authrepo.NewEmailVerificationRepository(db)
 	deviceRepo := devrepo.NewDeviceRepository(db)
 	activityRepo := actrepo.NewActivityRepository(db)
 	emissionRepo := emirepo.NewEmissionRepository(db)
@@ -111,7 +112,7 @@ func main() {
 
 	// --- Services ---
 	authSvc := authservice.NewAuthService(
-		userRepo, tokenRepo, resetRepo, jwtManager,
+		userRepo, tokenRepo, resetRepo, verificationRepo, jwtManager,
 		authservice.Config{
 			GoogleClientID:     cfg.Google.ClientID,
 			GoogleClientSecret: cfg.Google.ClientSecret,
@@ -188,11 +189,14 @@ func main() {
 	auth.Post("/google/token", authH.GoogleTokenLogin) // mobile: ID token from native SDK
 	auth.Get("/google/login", authH.GoogleLogin)
 	auth.Get("/google/callback", authH.GoogleCallback)
+	auth.Post("/verify-email", authH.VerifyEmail)
 	auth.Post("/forgot-password", authH.ForgotPassword)
 	auth.Post("/reset-password", authH.ResetPassword)
 
 	// Protected
 	protected := api.Use(middleware.RequireAuth(jwtManager))
+
+	protected.Post("/auth/resend-verification", authH.ResendVerification)
 
 	protected.Get("/users/me", identityH.GetMe)
 	protected.Put("/users/me", identityH.UpdateMe)
