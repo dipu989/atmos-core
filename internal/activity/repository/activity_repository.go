@@ -58,6 +58,23 @@ func (r *ActivityRepository) UpdateStatus(ctx context.Context, id uuid.UUID, sta
 	return r.db.WithContext(ctx).Model(&domain.Activity{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// Update persists changes to an existing activity.
+func (r *ActivityRepository) Update(ctx context.Context, activity *domain.Activity) error {
+	return r.db.WithContext(ctx).Save(activity).Error
+}
+
+// Delete hard-deletes an activity owned by userID.
+// Returns (true, nil) when found and deleted, (false, nil) when not found.
+func (r *ActivityRepository) Delete(ctx context.Context, id, userID uuid.UUID) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", id, userID).
+		Delete(&domain.Activity{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 func (r *ActivityRepository) ExistsByIdempotencyKey(ctx context.Context, key string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&domain.Activity{}).Where("idempotency_key = ?", key).Count(&count).Error

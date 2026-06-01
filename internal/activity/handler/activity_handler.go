@@ -147,6 +147,91 @@ func (h *ActivityHandler) ListActivities(c *fiber.Ctx) error {
 	})
 }
 
+// UpdateActivity godoc
+// @Summary     Update an activity
+// @Description Partially updates an activity. Only transport_mode, distance_km,
+//
+//	duration_minutes, and started_at can be changed. Source and provider are
+//	immutable after ingestion. Emission and timeline are recalculated automatically.
+//
+// @Tags        activities
+// @Accept      json
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id   path     string                     true "Activity UUID"
+// @Param       body body     dto.UpdateActivityRequest  true "Fields to update"
+// @Success     200  {object} domain.Activity
+// @Failure     400  {object} map[string]interface{}
+// @Failure     404  {object} map[string]interface{}
+// @Router      /activities/{id} [patch]
+func (h *ActivityHandler) UpdateActivity(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return response.BadRequest(c, "invalid activity id")
+	}
+
+	var req dto.UpdateActivityRequest
+	if err := validator.ParseAndValidate(c, &req); err != nil {
+		return err
+	}
+
+	userID := middleware.CurrentUserID(c)
+	timezone, _ := c.Locals("userTimezone").(string)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	var mode *actdomain.TransportMode
+	if req.TransportMode != nil {
+		m := actdomain.TransportMode(*req.TransportMode)
+		mode = &m
+	}
+
+	activity, err := h.svc.UpdateActivity(c.Context(), id, userID, service.UpdateInput{
+		TransportMode:   mode,
+		DistanceKM:      req.DistanceKM,
+		DurationMinutes: req.DurationMinutes,
+		StartedAt:       req.StartedAt,
+		UserTimezone:    timezone,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			return response.NotFound(c, "activity not found")
+		}
+		return response.InternalError(c, "failed to update activity")
+	}
+	return response.OK(c, activity)
+}
+
+// DeleteActivity godoc
+// @Summary     Delete an activity
+// @Description Permanently removes an activity and recalculates the affected day's
+//
+//	emission summary. This action cannot be undone.
+//
+// @Tags        activities
+// @Produce     json
+// @Security    BearerAuth
+// @Param       id  path     string true "Activity UUID"
+// @Success     200 {object} map[string]interface{}
+// @Failure     400 {object} map[string]interface{}
+// @Failure     404 {object} map[string]interface{}
+// @Router      /activities/{id} [delete]
+func (h *ActivityHandler) DeleteActivity(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return response.BadRequest(c, "invalid activity id")
+	}
+	userID := middleware.CurrentUserID(c)
+	if err := h.svc.DeleteActivity(c.Context(), id, userID); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			return response.NotFound(c, "activity not found")
+		}
+		return response.InternalError(c, "failed to delete activity")
+	}
+	return response.OK(c, fiber.Map{"message": "activity deleted"})
+}
+
 // modeToActivityType derives ActivityType from the transport mode.
 // "flight" is its own type; everything else is "transport".
 func modeToActivityType(mode string) actdomain.ActivityType {

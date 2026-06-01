@@ -20,6 +20,16 @@ type IngestActivityRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
+// UpdateActivityRequest is the body for PATCH /activities/:id.
+// All fields are optional — only provided fields are changed.
+// Source and provider cannot be changed after ingestion.
+type UpdateActivityRequest struct {
+	TransportMode   *string    `json:"transport_mode"   validate:"omitempty,oneof=walking cycling metro train car cab flight bus walk bicycle auto_rickshaw two_wheeler"`
+	DistanceKM      *float64   `json:"distance_km"      validate:"omitempty,gt=0"`
+	DurationMinutes *int       `json:"duration_minutes" validate:"omitempty,min=1"`
+	StartedAt       *time.Time `json:"started_at"`
+}
+
 // ActivitiesPage wraps a paginated list of activities.
 type ActivitiesPage struct {
 	Activities []domain.Activity `json:"activities"`

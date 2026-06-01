@@ -203,6 +203,8 @@ func main() {
 	protected.Post("/activities", activityH.Ingest)
 	protected.Get("/activities", activityH.ListActivities)
 	protected.Get("/activities/:id", activityH.GetActivity)
+	protected.Patch("/activities/:id", activityH.UpdateActivity)
+	protected.Delete("/activities/:id", activityH.DeleteActivity)
 
 	protected.Get("/timeline/daily", timelineH.GetDaily)
 	protected.Get("/timeline/weekly", timelineH.GetWeekly)
