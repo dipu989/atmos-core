@@ -7,17 +7,21 @@ import (
 )
 
 type User struct {
-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	Email        string     `gorm:"uniqueIndex;not null"  json:"email"`
-	PasswordHash *string    `gorm:"column:password_hash"  json:"-"`
-	DisplayName  string     `gorm:"not null;default:''"   json:"display_name"`
-	AvatarURL    *string    `gorm:"column:avatar_url"     json:"avatar_url,omitempty"`
-	Timezone     string     `gorm:"not null;default:'UTC'" json:"timezone"`
-	Locale       string     `gorm:"not null;default:'en'" json:"locale"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	DeletedAt    *time.Time `gorm:"index"                 json:"-"`
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey"   json:"id"`
+	Email           string     `gorm:"uniqueIndex;not null"   json:"email"`
+	PasswordHash    *string    `gorm:"column:password_hash"   json:"-"`
+	DisplayName     string     `gorm:"not null;default:''"    json:"display_name"`
+	AvatarURL       *string    `gorm:"column:avatar_url"      json:"avatar_url,omitempty"`
+	Timezone        string     `gorm:"not null;default:'UTC'" json:"timezone"`
+	Locale          string     `gorm:"not null;default:'en'"  json:"locale"`
+	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	DeletedAt       *time.Time `gorm:"index"                  json:"-"`
 }
+
+// IsEmailVerified returns true when the user has confirmed their email address.
+func (u *User) IsEmailVerified() bool { return u.EmailVerifiedAt != nil }
 
 func (User) TableName() string { return "users" }
 
