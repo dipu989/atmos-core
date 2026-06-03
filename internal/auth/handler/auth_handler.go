@@ -7,10 +7,12 @@ import (
 
 	"github.com/dipu/atmos-core/internal/auth/dto"
 	"github.com/dipu/atmos-core/internal/auth/service"
+	"github.com/dipu/atmos-core/platform/logger"
 	"github.com/dipu/atmos-core/platform/middleware"
 	"github.com/dipu/atmos-core/platform/response"
 	"github.com/dipu/atmos-core/platform/validator"
 	"github.com/gofiber/fiber/v2"
+	"go.uber.org/zap"
 )
 
 type AuthHandler struct {
@@ -308,13 +310,26 @@ func (h *AuthHandler) GoogleLogin(c *fiber.Ctx) error {
 // @Failure     401   {object} map[string]interface{}
 // @Router      /auth/google/callback [get]
 func (h *AuthHandler) GoogleCallback(c *fiber.Ctx) error {
+	log := logger.L()
 	errRedirect := fmt.Sprintf("%s/login?error=oauth_failed", h.frontendURL)
 
 	code := c.Query("code")
 	state := c.Query("state")
 	expectedState := c.Cookies("oauth_state")
 
+	log.Info("google oauth callback",
+		zap.Bool("has_code", code != ""),
+		zap.Bool("has_state", state != ""),
+		zap.Bool("has_cookie", expectedState != ""),
+		zap.Bool("state_match", state == expectedState),
+	)
+
 	if code == "" || state == "" || state != expectedState {
+		log.Warn("google oauth state check failed",
+			zap.Bool("code_empty", code == ""),
+			zap.Bool("state_empty", state == ""),
+			zap.Bool("state_mismatch", state != expectedState),
+		)
 		return c.Redirect(errRedirect, fiber.StatusTemporaryRedirect)
 	}
 
@@ -327,6 +342,7 @@ func (h *AuthHandler) GoogleCallback(c *fiber.Ctx) error {
 
 	_, pair, _, err := h.svc.HandleGoogleCallback(c.Context(), code)
 	if err != nil {
+		log.Error("google oauth code exchange failed", zap.Error(err))
 		return c.Redirect(errRedirect, fiber.StatusTemporaryRedirect)
 	}
 
