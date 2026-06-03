@@ -5,4 +5,9 @@ services:
     env_file: .env
     ports:
       - "8080:8080"
+    volumes:
+      # FCM service account key — mounted read-only from the host.
+      # File must exist at this path on the EC2 instance.
+      # FCM_SERVICE_ACCOUNT_JSON in .env must point to /secrets/atmos-firebase.json
+      - /home/ubuntu/atmos-firebase.json:/secrets/atmos-firebase.json:ro
     restart: unless-stopped
