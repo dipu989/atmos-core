@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	authdomain "github.com/dipu/atmos-core/internal/auth/domain"
@@ -237,7 +238,16 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (*i
 		return nil, nil, false, fmt.Errorf("failed to fetch Google profile: %w", err)
 	}
 
-	user, isNew, err := s.userRepo.FindOrCreateByOAuth(ctx, "google", profile.ID, profile.Email, profile.Name)
+	displayName := profile.Name
+	if displayName == "" {
+		if idx := strings.Index(profile.Email, "@"); idx > 0 {
+			displayName = profile.Email[:idx]
+		} else {
+			displayName = profile.Email
+		}
+	}
+
+	user, isNew, err := s.userRepo.FindOrCreateByOAuth(ctx, "google", profile.ID, profile.Email, displayName)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -261,6 +271,10 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (*i
 	if !user.IsEmailVerified() {
 		now := time.Now().UTC()
 		user.EmailVerifiedAt = &now
+		needsSave = true
+	}
+	if !isNew && user.DisplayName == "" && displayName != "" {
+		user.DisplayName = displayName
 		needsSave = true
 	}
 	if needsSave {
