@@ -18,10 +18,10 @@ type InsightService struct {
 	engine *rules.Engine
 }
 
-func NewInsightService(repo *insightrepo.InsightRepository, summaryRepo *timerepo.SummaryRepository) *InsightService {
+func NewInsightService(repo *insightrepo.InsightRepository, summaryRepo *timerepo.SummaryRepository, bus eventbus.Bus) *InsightService {
 	return &InsightService{
 		repo:   repo,
-		engine: rules.NewEngine(repo, summaryRepo),
+		engine: rules.NewEngine(repo, summaryRepo, bus),
 	}
 }
 

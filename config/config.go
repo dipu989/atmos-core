@@ -15,6 +15,11 @@ type Config struct {
 	JWT    JWTConfig
 	Google GoogleOAuthConfig
 	Email  EmailConfig
+	Push   PushConfig
+}
+
+type PushConfig struct {
+	FCMServiceAccountJSON string // FCM_SERVICE_ACCOUNT_JSON — path to Firebase service account key file
 }
 
 type EmailConfig struct {
@@ -103,6 +108,9 @@ func Load() (*Config, error) {
 		Email: EmailConfig{
 			Region:   getEnv("AWS_REGION", "ap-south-1"),
 			FromAddr: getEnv("SES_FROM_ADDRESS", "Atmos <noreply@atmosapp.dev>"),
+		},
+		Push: PushConfig{
+			FCMServiceAccountJSON: getEnv("FCM_SERVICE_ACCOUNT_JSON", ""),
 		},
 	}
 

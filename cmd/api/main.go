@@ -45,9 +45,11 @@ import (
 	idhandler "github.com/dipu/atmos-core/internal/identity/handler"
 	idrepo "github.com/dipu/atmos-core/internal/identity/repository"
 	idservice "github.com/dipu/atmos-core/internal/identity/service"
+	insightdomain "github.com/dipu/atmos-core/internal/insight/domain"
 	insighthandler "github.com/dipu/atmos-core/internal/insight/handler"
 	insightrepo "github.com/dipu/atmos-core/internal/insight/repository"
 	insightservice "github.com/dipu/atmos-core/internal/insight/service"
+	notifservice "github.com/dipu/atmos-core/internal/notification/service"
 	timelineagg "github.com/dipu/atmos-core/internal/timeline/aggregator"
 	timelinehandler "github.com/dipu/atmos-core/internal/timeline/handler"
 	timelinerepo "github.com/dipu/atmos-core/internal/timeline/repository"
@@ -58,6 +60,7 @@ import (
 	jwtpkg "github.com/dipu/atmos-core/platform/jwt"
 	"github.com/dipu/atmos-core/platform/logger"
 	"github.com/dipu/atmos-core/platform/middleware"
+	"github.com/dipu/atmos-core/platform/push"
 	"github.com/dipu/atmos-core/platform/response"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -86,6 +89,18 @@ func main() {
 	emailSender, err := email.NewSESSender(context.Background(), cfg.Email.Region, cfg.Email.FromAddr)
 	if err != nil {
 		log.Fatal("SES client init failed", zap.Error(err))
+	}
+
+	// --- FCM push sender (nil when not configured) ---
+	var fcmSender push.Sender
+	if cfg.Push.FCMServiceAccountJSON != "" {
+		fcmSender, err = push.NewFCMSender(context.Background(), cfg.Push.FCMServiceAccountJSON)
+		if err != nil {
+			log.Fatal("FCM client init failed", zap.Error(err))
+		}
+		log.Info("FCM push notifications enabled")
+	} else {
+		log.Info("FCM push notifications disabled — set FCM_SERVICE_ACCOUNT_JSON to enable")
 	}
 
 	// --- Repositories ---
@@ -127,7 +142,8 @@ func main() {
 	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus)
 	agg := timelineagg.NewAggregator(summaryRepo)
 	timelineSvc := timelineservice.NewTimelineService(summaryRepo, agg)
-	insightSvc := insightservice.NewInsightService(insightRepo, summaryRepo)
+	insightSvc := insightservice.NewInsightService(insightRepo, summaryRepo, bus)
+	notifSvc := notifservice.NewNotificationService(deviceRepo, fcmSender)
 	gmailSvc := gmailservice.NewGmailService(
 		gmailservice.Config{
 			ClientID:     cfg.Google.ClientID,
@@ -145,6 +161,7 @@ func main() {
 	bus.Subscribe(actdomain.EventActivityIngested, emissionSvc.HandleActivityIngested)
 	bus.Subscribe(emidomain.EventEmissionCalculated, timelineSvc.HandleEmissionCalculated)
 	bus.Subscribe(emidomain.EventEmissionCalculated, insightSvc.HandleEmissionCalculated)
+	bus.Subscribe(insightdomain.EventInsightCreated, notifSvc.HandleInsightCreated)
 
 	// --- Handlers ---
 	authH := authhandler.NewAuthHandler(authSvc, cfg.App.FrontendURL)
