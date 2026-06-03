@@ -283,12 +283,13 @@ func (h *AuthHandler) GoogleLogin(c *fiber.Ctx) error {
 		return response.ServiceUnavailable(c, "Google OAuth is not configured")
 	}
 
-	// Store CSRF state in a short-lived cookie (10 min, HttpOnly)
+	// Store CSRF state in a short-lived cookie (10 min, HttpOnly, Secure)
 	c.Cookie(&fiber.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
 		MaxAge:   600,
 		HTTPOnly: true,
+		Secure:   true,
 		SameSite: "Lax",
 	})
 
