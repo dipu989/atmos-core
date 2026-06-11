@@ -138,46 +138,54 @@ func (s *AuthService) Register(ctx context.Context, email, password, displayName
 	return user, pair, nil
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string, deviceID *googleuuid.UUID) (*TokenPair, error) {
+func (s *AuthService) Login(ctx context.Context, email, password string, deviceID *googleuuid.UUID) (*identitydomain.User, *TokenPair, error) {
 	user, err := s.userRepo.FindByEmail(ctx, email)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// If not found as active, check whether it's a soft-deleted account within grace period.
 	if user == nil {
 		user, err = s.userRepo.FindByEmailUnscoped(ctx, email)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if user == nil || user.DeletedAt == nil {
-			return nil, ErrInvalidCredentials
+			return nil, nil, ErrInvalidCredentials
 		}
 		// Outside the 7-day grace period — treat as gone.
 		if time.Since(*user.DeletedAt) > 7*24*time.Hour {
-			return nil, ErrInvalidCredentials
+			return nil, nil, ErrInvalidCredentials
 		}
 		// Inside grace period — verify password then restore.
 		if user.PasswordHash == nil {
-			return nil, ErrInvalidCredentials
+			return nil, nil, ErrInvalidCredentials
 		}
 		if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
-			return nil, ErrInvalidCredentials
+			return nil, nil, ErrInvalidCredentials
 		}
 		if err := s.userRepo.Restore(ctx, user.ID); err != nil {
-			return nil, fmt.Errorf("restore account: %w", err)
+			return nil, nil, fmt.Errorf("restore account: %w", err)
 		}
-		return s.issuePair(ctx, user.ID, deviceID)
+		pair, err := s.issuePair(ctx, user.ID, deviceID)
+		if err != nil {
+			return nil, nil, err
+		}
+		return user, pair, nil
 	}
 
 	if user.PasswordHash == nil {
 		// OAuth-only account — no password set.
-		return nil, ErrInvalidCredentials
+		return nil, nil, ErrInvalidCredentials
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
-		return nil, ErrInvalidCredentials
+		return nil, nil, ErrInvalidCredentials
 	}
-	return s.issuePair(ctx, user.ID, deviceID)
+	pair, err := s.issuePair(ctx, user.ID, deviceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return user, pair, nil
 }
 
 func (s *AuthService) Refresh(ctx context.Context, rawToken string) (*TokenPair, error) {
