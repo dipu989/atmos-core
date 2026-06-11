@@ -73,7 +73,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return err
 	}
 
-	pair, err := h.svc.Login(c.Context(), req.Email, req.Password, nil)
+	user, pair, err := h.svc.Login(c.Context(), req.Email, req.Password, nil)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
 			return response.Unauthorized(c, "invalid email or password")
@@ -81,7 +81,8 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return response.InternalError(c, "login failed")
 	}
 
-	return response.OK(c, dto.TokenPairResponse{
+	return response.OK(c, dto.AuthResponse{
+		User:         user,
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
 	})
