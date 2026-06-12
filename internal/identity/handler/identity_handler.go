@@ -154,6 +154,9 @@ func (h *IdentityHandler) UpdatePreferences(c *fiber.Ctx) error {
 		WeeklyReportEnabled:      req.WeeklyReportEnabled,
 		DailyGoalKgCO2e:          req.DailyGoalKgCO2e,
 		DataSharingEnabled:       req.DataSharingEnabled,
+		HomeAddress:              req.HomeAddress,
+		WorkAddress:              req.WorkAddress,
+		DefaultTransport:         req.DefaultTransport,
 	})
 	if err != nil {
 		return response.InternalError(c, "failed to update preferences")

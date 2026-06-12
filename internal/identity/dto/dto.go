@@ -25,4 +25,7 @@ type UpdatePreferencesRequest struct {
 	WeeklyReportEnabled      *bool    `json:"weekly_report_enabled"`
 	DailyGoalKgCO2e          *float64 `json:"daily_goal_kg_co2e"         validate:"omitempty,gt=0"`
 	DataSharingEnabled       *bool    `json:"data_sharing_enabled"`
+	HomeAddress              *string  `json:"home_address"               validate:"omitempty,max=500"`
+	WorkAddress              *string  `json:"work_address"               validate:"omitempty,max=500"`
+	DefaultTransport         *string  `json:"default_transport"          validate:"omitempty,max=50"`
 }

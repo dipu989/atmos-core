@@ -14,6 +14,9 @@ type UserPreferences struct {
 	WeeklyReportEnabled      bool      `gorm:"not null;default:true"          json:"weekly_report_enabled"`
 	DailyGoalKgCO2e          *float64  `gorm:"column:daily_goal_kg_co2e"      json:"daily_goal_kg_co2e,omitempty"`
 	DataSharingEnabled       bool      `gorm:"not null;default:false"         json:"data_sharing_enabled"`
+	HomeAddress              *string   `gorm:"column:home_address"            json:"home_address,omitempty"`
+	WorkAddress              *string   `gorm:"column:work_address"            json:"work_address,omitempty"`
+	DefaultTransport         *string   `gorm:"column:default_transport"       json:"default_transport,omitempty"`
 	CreatedAt                time.Time `json:"created_at"`
 	UpdatedAt                time.Time `json:"updated_at"`
 }
