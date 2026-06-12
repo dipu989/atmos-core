@@ -71,6 +71,9 @@ type UpdatePreferencesInput struct {
 	WeeklyReportEnabled      *bool
 	DailyGoalKgCO2e          *float64
 	DataSharingEnabled       *bool
+	HomeAddress              *string
+	WorkAddress              *string
+	DefaultTransport         *string
 }
 
 func (s *IdentityService) GetPreferences(ctx context.Context, userID uuid.UUID) (*domain.UserPreferences, error) {
@@ -101,6 +104,15 @@ func (s *IdentityService) UpdatePreferences(ctx context.Context, userID uuid.UUI
 	}
 	if input.DataSharingEnabled != nil {
 		prefs.DataSharingEnabled = *input.DataSharingEnabled
+	}
+	if input.HomeAddress != nil {
+		prefs.HomeAddress = input.HomeAddress
+	}
+	if input.WorkAddress != nil {
+		prefs.WorkAddress = input.WorkAddress
+	}
+	if input.DefaultTransport != nil {
+		prefs.DefaultTransport = input.DefaultTransport
 	}
 
 	if err := s.repo.UpdatePreferences(ctx, prefs); err != nil {
