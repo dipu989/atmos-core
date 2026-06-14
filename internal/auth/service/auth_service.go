@@ -45,18 +45,20 @@ type TokenPair struct {
 }
 
 type AuthService struct {
-	userRepo         *identityrepo.UserRepository
-	tokenRepo        *authrepo.TokenRepository
-	resetRepo        *authrepo.PasswordResetRepository
-	verificationRepo *authrepo.EmailVerificationRepository
-	jwtManager       *jwt.Manager
-	emailSender      email.Sender
-	frontendURL      string
-	googleOAuth      *oauth2.Config // nil when Google credentials are not set
+	userRepo          *identityrepo.UserRepository
+	tokenRepo         *authrepo.TokenRepository
+	resetRepo         *authrepo.PasswordResetRepository
+	verificationRepo  *authrepo.EmailVerificationRepository
+	jwtManager        *jwt.Manager
+	emailSender       email.Sender
+	frontendURL       string
+	googleOAuth       *oauth2.Config // nil when Google credentials are not set
+	googleIosClientID string         // iOS OAuth client ID — separate audience from the web client ID
 }
 
 type Config struct {
 	GoogleClientID     string
+	GoogleIosClientID  string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
 	EmailSender        email.Sender
@@ -89,6 +91,7 @@ func NewAuthService(
 			Endpoint:     google.Endpoint,
 		}
 	}
+	svc.googleIosClientID = cfg.GoogleIosClientID
 	return svc
 }
 
@@ -306,6 +309,10 @@ func (s *AuthService) HandleGoogleIDToken(ctx context.Context, rawIDToken string
 	}
 
 	payload, err := idtoken.Validate(ctx, rawIDToken, s.googleOAuth.ClientID)
+	if err != nil && s.googleIosClientID != "" {
+		// iOS tokens have aud = iOS client ID, not the web client ID.
+		payload, err = idtoken.Validate(ctx, rawIDToken, s.googleIosClientID)
+	}
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("invalid google id token: %w", err)
 	}
