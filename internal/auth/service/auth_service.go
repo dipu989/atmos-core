@@ -45,15 +45,15 @@ type TokenPair struct {
 }
 
 type AuthService struct {
-	userRepo         *identityrepo.UserRepository
-	tokenRepo        *authrepo.TokenRepository
-	resetRepo        *authrepo.PasswordResetRepository
-	verificationRepo *authrepo.EmailVerificationRepository
-	jwtManager       *jwt.Manager
-	emailSender      email.Sender
-	frontendURL      string
-	googleOAuth      *oauth2.Config // nil when Google credentials are not set
-	googleIosClientID string        // iOS OAuth client ID — separate audience from the web client ID
+	userRepo          *identityrepo.UserRepository
+	tokenRepo         *authrepo.TokenRepository
+	resetRepo         *authrepo.PasswordResetRepository
+	verificationRepo  *authrepo.EmailVerificationRepository
+	jwtManager        *jwt.Manager
+	emailSender       email.Sender
+	frontendURL       string
+	googleOAuth       *oauth2.Config // nil when Google credentials are not set
+	googleIosClientID string         // iOS OAuth client ID — separate audience from the web client ID
 }
 
 type Config struct {
