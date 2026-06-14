@@ -130,6 +130,7 @@ func main() {
 		userRepo, tokenRepo, resetRepo, verificationRepo, jwtManager,
 		authservice.Config{
 			GoogleClientID:     cfg.Google.ClientID,
+			GoogleIosClientID:  cfg.Google.IosClientID,
 			GoogleClientSecret: cfg.Google.ClientSecret,
 			GoogleRedirectURL:  cfg.Google.RedirectURL,
 			EmailSender:        emailSender,

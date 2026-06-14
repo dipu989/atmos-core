@@ -56,6 +56,7 @@ type JWTConfig struct {
 
 type GoogleOAuthConfig struct {
 	ClientID         string
+	IosClientID      string // iOS native Sign-In client ID (separate audience from web client)
 	ClientSecret     string
 	RedirectURL      string // For web Sign-In callback
 	GmailRedirectURL string // GOOGLE_GMAIL_REDIRECT_URL — for Gmail connect callback
@@ -101,6 +102,7 @@ func Load() (*Config, error) {
 		},
 		Google: GoogleOAuthConfig{
 			ClientID:         getEnv("GOOGLE_CLIENT_ID", ""),
+			IosClientID:      getEnv("GOOGLE_IOS_CLIENT_ID", ""),
 			ClientSecret:     getEnv("GOOGLE_CLIENT_SECRET", ""),
 			RedirectURL:      getEnv("GOOGLE_REDIRECT_URL", ""),
 			GmailRedirectURL: getEnv("GOOGLE_GMAIL_REDIRECT_URL", ""),
