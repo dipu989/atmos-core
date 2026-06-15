@@ -27,6 +27,8 @@ type UberParser struct {
 	reDuration *regexp.Regexp
 	reVehicle  *regexp.Regexp
 	reFare     *regexp.Regexp
+	rePickup   *regexp.Regexp // address line after "Pickup" / "Pick-up"
+	reDrop     *regexp.Regexp // address line after "Drop-off" / "Destination"
 }
 
 func NewUberParser() *UberParser {
@@ -41,6 +43,11 @@ func NewUberParser() *UberParser {
 		reDuration: regexp.MustCompile(`(?i)(?:(\d+)\s*hr[s]?\s*)?(\d+)\s*min(?:s|utes)?`),
 		reVehicle:  regexp.MustCompile(`(?i)(Uber\s*(?:Go|XL|Auto|Moto|Premier|Pool|Comfort|Black|SUV|Intercity)?)`),
 		reFare:     regexp.MustCompile(`(?i)(?:₹|INR|Rs\.?)\s*([\d,]+\.?\d*)`),
+		// Address extraction: capture the first non-empty line after the label.
+		// Uber plain-text format:
+		//   Pickup\n847, Indira Nagar, Bengaluru\n\nDrop-off\nWhitefield, Bengaluru
+		rePickup: regexp.MustCompile(`(?im)^(?:pickup|pick-up)\s*:?\s*\n([^\n]+)`),
+		reDrop:   regexp.MustCompile(`(?im)^(?:drop.?off|destination|drop)\s*:?\s*\n([^\n]+)`),
 	}
 }
 
@@ -134,6 +141,9 @@ func (p *UberParser) Parse(subject, body string) (*ParsedRide, error) {
 	startedAt := extractDateFromText(body)
 	meta := p.buildMeta(subject, vehicle, fareAmount)
 
+	pickup := extractFirstLine(p.rePickup, body)
+	drop := extractFirstLine(p.reDrop, body)
+
 	return &ParsedRide{
 		ProviderEmailTypeCode: "uber_ride",
 		TransportMode:         mode,
@@ -141,11 +151,14 @@ func (p *UberParser) Parse(subject, body string) (*ParsedRide, error) {
 		DistanceKM:            dist,
 		DurationMinutes:       durationMins,
 		StartedAt:             startedAt,
+		PickupAddress:         pickup,
+		DropAddress:           drop,
 		FareAmount:            fareAmount,
 		Currency:              "INR",
 		Metadata:              meta,
 	}, nil
 }
+
 
 func (p *UberParser) resolveVehicle(raw string) (display, mode string) {
 	display = strings.TrimSpace(raw)

@@ -61,6 +61,12 @@ func (h *ActivityHandler) Ingest(c *fiber.Ctx) error {
 		EndedAt:         req.EndedAt,
 		UserTimezone:    timezone,
 		IdempotencyKey:  req.IdempotencyKey,
+		OriginLat:       req.OriginLat,
+		OriginLng:       req.OriginLng,
+		DestLat:         req.DestLat,
+		DestLng:         req.DestLng,
+		FareAmount:      req.FareAmount,
+		FareCurrency:    req.FareCurrency,
 	}
 
 	activity, err := h.svc.Ingest(c.Context(), input)

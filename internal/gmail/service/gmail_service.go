@@ -18,6 +18,7 @@ import (
 
 	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
 	actservice "github.com/dipu/atmos-core/internal/activity/service"
+	"github.com/dipu/atmos-core/internal/geocoder"
 	"github.com/dipu/atmos-core/internal/gmail/domain"
 	"github.com/dipu/atmos-core/internal/gmail/parser"
 	"github.com/dipu/atmos-core/internal/gmail/repository"
@@ -60,6 +61,7 @@ type GmailService struct {
 	provRepo    *repository.ProviderRepository
 	activitySvc *actservice.ActivityService
 	registry    *parser.Registry
+	geocoder    geocoder.Geocoder
 	hmacSecret  []byte
 	batchSize   int64
 }
@@ -70,6 +72,7 @@ type Config struct {
 	RedirectURL  string
 	HMACSecret   string // JWT_ACCESS_SECRET is reused
 	BatchSize    int64  // 0 → defaultBatchSize
+	MapsAPIKey   string // optional; enables geocoding of pickup/drop addresses
 }
 
 func NewGmailService(
@@ -96,6 +99,7 @@ func NewGmailService(
 		provRepo:    provRepo,
 		activitySvc: activitySvc,
 		registry:    parser.NewRegistry(),
+		geocoder:    geocoder.New(cfg.MapsAPIKey),
 		hmacSecret:  []byte(cfg.HMACSecret),
 		batchSize:   batchSize,
 	}
@@ -512,6 +516,11 @@ func (s *GmailService) handleMessage(
 	}
 
 	// ── Full-body parse ───────────────────────────────────────────────────────
+	// Extract raw HTML first so we can scan it for embedded map coordinates
+	// (they exist in <a href> attributes and are lost once HTML is stripped).
+	rawHTML := extractPart(msg.Payload, "text/html")
+	htmlPickupLat, htmlPickupLng, htmlDropLat, htmlDropLng := parser.ExtractMapCoords(rawHTML)
+
 	body = extractBody(msg)
 	for _, candidate := range candidates {
 		p, ok := s.registry.Get(candidate.Code)
@@ -528,6 +537,14 @@ func (s *GmailService) handleMessage(
 		}
 		if err != nil {
 			return s.failOutcome(userID, messageID, &candidate.Code, subject, snippet, err)
+		}
+
+		// Merge HTML-extracted coords into the ride if the parser didn't find any.
+		if ride.PickupLat == nil {
+			ride.PickupLat, ride.PickupLng = htmlPickupLat, htmlPickupLng
+		}
+		if ride.DropLat == nil {
+			ride.DropLat, ride.DropLng = htmlDropLat, htmlDropLng
 		}
 
 		resolved := resolveCode(candidates, ride.ProviderEmailTypeCode, candidate.Code)
@@ -549,6 +566,8 @@ func (s *GmailService) ingestRide(
 	dateHeader, subject, snippet string,
 	ride *parser.ParsedRide,
 ) msgOutcome {
+	log := logger.L()
+
 	// Fall back to email Date: header when parser couldn't extract a date.
 	startedAt := ride.StartedAt
 	if startedAt.IsZero() {
@@ -564,10 +583,61 @@ func (s *GmailService) ingestRide(
 		actType = actdomain.ActivityFlight
 	}
 
-	// activities.provider = providers.code ("uber", "rapido")
-	// activities.source   = "gmail" (how the data entered Atmos)
-	// Layer 2 dedup: idempotency_key = "gmail:<messageId>"
-	activity, err := s.activitySvc.Ingest(ctx, actservice.IngestInput{
+	// Geocode pickup and drop concurrently — two independent HTTP calls.
+	type geoResult struct{ lat, lng *float64 }
+	pickupCh := make(chan geoResult, 1)
+	dropCh := make(chan geoResult, 1)
+
+	go func() {
+		res := geoResult{ride.PickupLat, ride.PickupLng}
+		if res.lat == nil && ride.PickupAddress != "" {
+			if lat, lng, err := s.geocoder.Geocode(ctx, ride.PickupAddress); err == nil {
+				res.lat, res.lng = &lat, &lng
+			} else {
+				log.Debug("gmail: geocode pickup failed", zap.String("address", ride.PickupAddress), zap.Error(err))
+			}
+		}
+		pickupCh <- res
+	}()
+	go func() {
+		res := geoResult{ride.DropLat, ride.DropLng}
+		if res.lat == nil && ride.DropAddress != "" {
+			if lat, lng, err := s.geocoder.Geocode(ctx, ride.DropAddress); err == nil {
+				res.lat, res.lng = &lat, &lng
+			} else {
+				log.Debug("gmail: geocode drop failed", zap.String("address", ride.DropAddress), zap.Error(err))
+			}
+		}
+		dropCh <- res
+	}()
+	pickupRes := <-pickupCh
+	dropRes := <-dropCh
+	pickupLat, pickupLng := pickupRes.lat, pickupRes.lng
+	dropLat, dropLng := dropRes.lat, dropRes.lng
+
+	// Compute a derived EndedAt from DurationMinutes when we have a start time.
+	var endedAt *time.Time
+	if ride.DurationMinutes != nil {
+		end := startedAt.Add(time.Duration(*ride.DurationMinutes) * time.Minute)
+		endedAt = &end
+	}
+
+	// Fare currency defaults to INR (all current providers are India-based).
+	fareCurrency := ride.Currency
+	if fareCurrency == "" && ride.FareAmount != nil {
+		fareCurrency = "INR"
+	}
+	var fareCurrencyPtr *string
+	if fareCurrency != "" {
+		fareCurrencyPtr = &fareCurrency
+	}
+
+	// IngestWithDedup runs the TripMatcher before creating a row:
+	// if a GPS activity from the same trip already exists it is enriched in place;
+	// otherwise a new receipt-sourced activity is created.
+	// Layer 2 idempotency: "gmail:<messageId>" ensures replay safety.
+	receiptID := messageID
+	activity, _, err := s.activitySvc.IngestWithDedup(ctx, actservice.IngestInput{
 		UserID:          userID,
 		ActivityType:    actType,
 		TransportMode:   &mode,
@@ -577,8 +647,16 @@ func (s *GmailService) ingestRide(
 		Provider:        &candidate.ProviderCode, // "uber", "rapido"
 		RawMetadata:     actdomain.RawMetadata(ride.Metadata),
 		StartedAt:       startedAt,
+		EndedAt:         endedAt,
 		UserTimezone:    "UTC",
 		IdempotencyKey:  "gmail:" + messageID,
+		OriginLat:       pickupLat,
+		OriginLng:       pickupLng,
+		DestLat:         dropLat,
+		DestLng:         dropLng,
+		ReceiptID:       &receiptID,
+		FareAmount:      ride.FareAmount,
+		FareCurrency:    fareCurrencyPtr,
 	})
 	if errors.Is(err, actservice.ErrDuplicate) {
 		return s.skipOutcome(userID, messageID, &resolvedCode, subject, snippet)

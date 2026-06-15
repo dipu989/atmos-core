@@ -11,6 +11,7 @@ package parser
 import (
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,9 +36,15 @@ type ParsedRide struct {
 	StartedAt       time.Time // zero → caller falls back to email Date: header
 	PickupAddress   string
 	DropAddress     string
-	FareAmount      *float64
-	Currency        string
-	Metadata        map[string]any // stored as raw_metadata on the activity
+	// Coordinates — set when the email contains a Google Maps URL with lat/lng.
+	// If nil after parsing, the caller geocodes PickupAddress/DropAddress.
+	PickupLat *float64
+	PickupLng *float64
+	DropLat   *float64
+	DropLng   *float64
+	FareAmount *float64
+	Currency   string
+	Metadata   map[string]any // stored as raw_metadata on the activity
 }
 
 // Parser is implemented by each provider-specific file.
@@ -97,11 +104,65 @@ func normalise(s string) string {
 	return strings.TrimSpace(reMultiSpace.ReplaceAllString(strings.ToLower(s), " "))
 }
 
-// isCancellation returns true if the subject or snippet indicates a ride
+// IsCancellation returns true if the subject or snippet indicates a ride
 // cancellation — common across all ride providers.
 func IsCancellation(subject, snippet string) bool {
 	lower := strings.ToLower(subject + " " + snippet)
 	return strings.Contains(lower, "cancellation") ||
 		strings.Contains(lower, "cancelled") ||
 		strings.Contains(lower, "cancellation fee")
+}
+
+// reGoogleMapsCoord matches Google Maps URLs that embed lat,lng directly:
+//
+//	https://maps.google.com/maps?q=12.9352,77.6245
+//	https://www.google.com/maps/place/.../@12.9352,77.6245,...
+var reGoogleMapsCoord = regexp.MustCompile(
+	`(?:maps\.google\.com[^"'\s]*[?&]q=|google\.com/maps/[^"'\s]*@)([-\d.]+),([-\d.]+)`,
+)
+
+// ExtractMapCoords scans raw HTML (before stripping) for embedded Google Maps
+// coordinates and returns up to two coordinate pairs (pickup, drop).
+// Returns nil slices when none are found.
+func ExtractMapCoords(html string) (pickupLat, pickupLng, dropLat, dropLng *float64) {
+	matches := reGoogleMapsCoord.FindAllStringSubmatch(html, 4)
+	if len(matches) == 0 {
+		return
+	}
+	if lat, lng, ok := parseLatLng(matches[0]); ok {
+		pickupLat, pickupLng = &lat, &lng
+	}
+	if len(matches) >= 2 {
+		if lat, lng, ok := parseLatLng(matches[1]); ok {
+			dropLat, dropLng = &lat, &lng
+		}
+	}
+	return
+}
+
+// extractFirstLine returns the captured group from the first match, trimmed.
+func extractFirstLine(re *regexp.Regexp, body string) string {
+	if m := re.FindStringSubmatch(body); len(m) >= 2 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+func parseLatLng(m []string) (lat, lng float64, ok bool) {
+	if len(m) < 3 {
+		return
+	}
+	var err error
+	if lat, err = strconv.ParseFloat(m[1], 64); err != nil {
+		return
+	}
+	if lng, err = strconv.ParseFloat(m[2], 64); err != nil {
+		return
+	}
+	// Sanity check: valid coordinate ranges.
+	if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+		return
+	}
+	ok = true
+	return
 }

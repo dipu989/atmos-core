@@ -31,6 +31,8 @@ type RapidoParser struct {
 	reFare     *regexp.Regexp
 	reVehicle  *regexp.Regexp
 	reRideID   *regexp.Regexp
+	rePickup   *regexp.Regexp // pickup address line
+	reDrop     *regexp.Regexp // drop address line
 }
 
 func NewRapidoParser() *RapidoParser {
@@ -45,6 +47,11 @@ func NewRapidoParser() *RapidoParser {
 		reVehicle: regexp.MustCompile(`(?i)\b(Bike|Auto|Cab)\b`),
 		// "RD17245133312223185"
 		reRideID: regexp.MustCompile(`(?i)(RD\d{10,})`),
+		// Rapido address formats:
+		//   "Pickup Location\nKoramangala, Bengaluru"
+		//   "Pickup: Koramangala, Bengaluru"
+		rePickup: regexp.MustCompile(`(?im)^(?:pickup\s*(?:location)?|pick.?up)\s*:?\s*\n?([^\n:][^\n]+)`),
+		reDrop:   regexp.MustCompile(`(?im)^(?:drop\s*(?:location)?|drop.?off|destination)\s*:?\s*\n?([^\n:][^\n]+)`),
 	}
 }
 
@@ -128,6 +135,9 @@ func (p *RapidoParser) Parse(subject, body string) (*ParsedRide, error) {
 		meta["ride_id"] = rideID
 	}
 
+	pickup := extractFirstLine(p.rePickup, body)
+	drop := extractFirstLine(p.reDrop, body)
+
 	return &ParsedRide{
 		ProviderEmailTypeCode: code,
 		TransportMode:         mode,
@@ -135,6 +145,8 @@ func (p *RapidoParser) Parse(subject, body string) (*ParsedRide, error) {
 		DistanceKM:            dist,
 		DurationMinutes:       durationMins,
 		StartedAt:             startedAt,
+		PickupAddress:         pickup,
+		DropAddress:           drop,
 		FareAmount:            fareAmount,
 		Currency:              "INR",
 		Metadata:              meta,

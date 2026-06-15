@@ -151,6 +151,7 @@ func main() {
 			ClientSecret: cfg.Google.ClientSecret,
 			RedirectURL:  cfg.Google.GmailRedirectURL,
 			HMACSecret:   cfg.JWT.AccessSecret,
+			MapsAPIKey:   cfg.Google.MapsAPIKey,
 		},
 		gmailConnRepo,
 		gmailLogRepo,
