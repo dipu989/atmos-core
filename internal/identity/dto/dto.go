@@ -9,10 +9,8 @@ type UpdateProfileRequest struct {
 }
 
 // DeleteAccountRequest is the body for DELETE /users/me.
-// Email+password accounts must supply their current password.
-// OAuth-only accounts (no password) must supply the exact confirmation string.
+// All accounts must supply the exact word "delete" in the confirmation field.
 type DeleteAccountRequest struct {
-	Password     string `json:"password"`
 	Confirmation string `json:"confirmation"`
 }
 
