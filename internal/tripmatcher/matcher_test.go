@@ -25,10 +25,10 @@ func tsEnd(start time.Time, minutes int) *time.Time {
 // Another destination: 12.9800, 77.7300
 
 const (
-	homeLat   = 12.9352
-	homeLng   = 77.6245
-	workLat   = 12.9698
-	workLng   = 77.7499
+	homeLat     = 12.9352
+	homeLng     = 77.6245
+	workLat     = 12.9698
+	workLng     = 77.7499
 	nearHomeLat = 12.9334 // ~200 m south of home
 	nearHomeLng = 77.6245
 )
@@ -79,7 +79,7 @@ func TestGPSLateStart200m(t *testing.T) {
 	receipt := TripCandidate{
 		StartedAt:       receiptStart,
 		EndedAt:         tsEnd(receiptStart, 45),
-		OriginLat:       f64(homeLat),    // exact pickup
+		OriginLat:       f64(homeLat), // exact pickup
 		OriginLng:       f64(homeLng),
 		DestLat:         f64(workLat),
 		DestLng:         f64(workLng),
@@ -89,7 +89,7 @@ func TestGPSLateStart200m(t *testing.T) {
 	gps := TripCandidate{
 		StartedAt:       gpsStart,
 		EndedAt:         tsEnd(gpsStart, 43), // GPS missed the first 2 min
-		OriginLat:       f64(nearHomeLat), // ~200 m from actual pickup
+		OriginLat:       f64(nearHomeLat),    // ~200 m from actual pickup
 		OriginLng:       f64(nearHomeLng),
 		DestLat:         f64(workLat),
 		DestLng:         f64(workLng),
@@ -199,7 +199,7 @@ func TestGPSPartialCoverage(t *testing.T) {
 	gps := TripCandidate{
 		StartedAt:       gpsStart,
 		EndedAt:         tsEnd(receiptStart, 90), // same end, just late start
-		OriginLat:       nil,                      // no coords at GPS start (tunnel)
+		OriginLat:       nil,                     // no coords at GPS start (tunnel)
 		OriginLng:       nil,
 		DestLat:         f64(workLat),
 		DestLng:         f64(workLng),

@@ -50,9 +50,9 @@ type MatchResult struct {
 
 // Confidence thresholds — exported so callers can apply consistent rules.
 const (
-	ThresholdAutoMerge       = 0.65 // ≥ this → auto-merge into one activity
+	ThresholdAutoMerge        = 0.65 // ≥ this → auto-merge into one activity
 	ThresholdAutoMergeNoCoord = 0.75 // ≥ this → auto-merge when coords unavailable
-	ThresholdReview          = 0.45 // ≥ this but < AutoMerge → flag for user review
+	ThresholdReview           = 0.45 // ≥ this but < AutoMerge → flag for user review
 )
 
 // ------------------- scorer -------------------
@@ -187,18 +187,18 @@ func durationScore(a, b TripCandidate) float64 {
 // same group are considered equivalent for dedup purposes (e.g. "cab" and
 // "car" are both 4-wheel motorised; "two_wheeler" covers Rapido bike taxi).
 var modeGroup = map[string]int{
-	"car":          1,
-	"cab":          1,
-	"two_wheeler":  2,
+	"car":           1,
+	"cab":           1,
+	"two_wheeler":   2,
 	"auto_rickshaw": 3,
-	"bus":          4,
-	"metro":        5,
-	"train":        6,
-	"walking":      7,
-	"walk":         7,
-	"cycling":      8,
-	"bicycle":      8,
-	"flight":       9,
+	"bus":           4,
+	"metro":         5,
+	"train":         6,
+	"walking":       7,
+	"walk":          7,
+	"cycling":       8,
+	"bicycle":       8,
+	"flight":        9,
 }
 
 func modesCompatible(a, b string) bool {

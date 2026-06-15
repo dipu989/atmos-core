@@ -159,7 +159,6 @@ func (p *UberParser) Parse(subject, body string) (*ParsedRide, error) {
 	}, nil
 }
 
-
 func (p *UberParser) resolveVehicle(raw string) (display, mode string) {
 	display = strings.TrimSpace(raw)
 	lower := strings.ToLower(display)

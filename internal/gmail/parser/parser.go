@@ -38,10 +38,10 @@ type ParsedRide struct {
 	DropAddress     string
 	// Coordinates — set when the email contains a Google Maps URL with lat/lng.
 	// If nil after parsing, the caller geocodes PickupAddress/DropAddress.
-	PickupLat *float64
-	PickupLng *float64
-	DropLat   *float64
-	DropLng   *float64
+	PickupLat  *float64
+	PickupLng  *float64
+	DropLat    *float64
+	DropLng    *float64
 	FareAmount *float64
 	Currency   string
 	Metadata   map[string]any // stored as raw_metadata on the activity
