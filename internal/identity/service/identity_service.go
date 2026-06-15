@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	authrepo "github.com/dipu/atmos-core/internal/auth/repository"
@@ -124,13 +125,12 @@ func (s *IdentityService) UpdatePreferences(ctx context.Context, userID uuid.UUI
 // DeleteAccount soft-deletes the user's account and revokes all their sessions.
 // All accounts must supply the exact string "delete" as confirmation.
 func (s *IdentityService) DeleteAccount(ctx context.Context, userID uuid.UUID, confirmation string) error {
-	user, err := s.repo.FindByID(ctx, userID)
-	if err != nil || user == nil {
-		return ErrNotFound
+	if strings.ToLower(strings.TrimSpace(confirmation)) != "delete" {
+		return ErrInvalidConfirmation
 	}
 
-	if confirmation != "delete" {
-		return ErrInvalidConfirmation
+	if _, err := s.repo.FindByID(ctx, userID); err != nil {
+		return ErrNotFound
 	}
 
 	if err := s.repo.SoftDelete(ctx, userID); err != nil {
