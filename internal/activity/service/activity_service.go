@@ -166,9 +166,9 @@ func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput
 		}
 	}
 
-	// Determine auto-merge threshold: stricter when no destination coords.
+	// Stricter threshold when destination coords or end time are unavailable.
 	autoMergeThreshold := tripmatcher.ThresholdAutoMerge
-	if best != nil && !best.result.HasCoords {
+	if best != nil && (!best.result.HasCoords || !best.result.HasEndTime) {
 		autoMergeThreshold = tripmatcher.ThresholdAutoMergeNoCoord
 	}
 
@@ -383,8 +383,9 @@ func (s *ActivityService) tryMergeGPSWithReceipt(ctx context.Context, input Inge
 		return nil, nil, nil
 	}
 
+	// Stricter threshold when destination coords or end time are unavailable.
 	autoMergeThreshold := tripmatcher.ThresholdAutoMerge
-	if !best.result.HasCoords {
+	if !best.result.HasCoords || !best.result.HasEndTime {
 		autoMergeThreshold = tripmatcher.ThresholdAutoMergeNoCoord
 	}
 
@@ -423,10 +424,14 @@ func (s *ActivityService) tryMergeGPSWithReceipt(ctx context.Context, input Inge
 
 // isReceiptSource reports whether an activity came from a receipt-based ingestion
 // path. These are the candidates that an incoming GPS trip can be merged into.
+// SourceGPSReceipt is included so that an already-merged row remains visible on
+// retry (GPS idempotency key not stored) and on GPS session split (app restart
+// mid-trip) — in both cases the second GPS event re-merges into the same row
+// rather than creating a duplicate.
 func isReceiptSource(src actdomain.ActivitySource) bool {
 	switch src {
 	case actdomain.SourceGmail, actdomain.SourceUber, actdomain.SourceOla,
-		actdomain.SourceRapido, actdomain.SourceNammaYatri:
+		actdomain.SourceRapido, actdomain.SourceNammaYatri, actdomain.SourceGPSReceipt:
 		return true
 	}
 	return false

@@ -1,5 +1,5 @@
-// Package places provides a proxy for the Google Maps Geocoding API so the
-// mobile client can search for place names and receive coordinates without
+// Package places provides a proxy for the Google Maps Places Text Search API so
+// the mobile client can search for place names and receive coordinates without
 // embedding the Maps API key in the binary.
 package places
 
@@ -23,7 +23,7 @@ type PlaceResult struct {
 	Lng  float64 `json:"lng"`
 }
 
-// Handler proxies place-search requests to the Google Maps Geocoding API.
+// Handler proxies place-search requests to the Google Maps Places Text Search API.
 type Handler struct {
 	apiKey string
 	client *http.Client
@@ -39,8 +39,8 @@ func NewHandler(apiKey string) *Handler {
 // Autocomplete godoc
 // @Summary     Place autocomplete
 // @Description Returns up to 5 place suggestions matching the query string.
-// @Description Backed by the Google Maps Geocoding API; degrades to an empty
-// @Description list when no Maps API key is configured.
+// @Description Backed by the Google Maps Places Text Search API; degrades to an
+// @Description empty list when no Maps API key is configured.
 // @Tags        places
 // @Produce     json
 // @Security    BearerAuth
@@ -65,14 +65,14 @@ func (h *Handler) Autocomplete(c *fiber.Ctx) error {
 	return response.OK(c, places)
 }
 
-const geocodeURL = "https://maps.googleapis.com/maps/api/geocode/json"
+const placesTextSearchURL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 
 func (h *Handler) search(ctx context.Context, query string) ([]PlaceResult, error) {
-	reqURL := fmt.Sprintf("%s?address=%s&region=in&key=%s",
-		geocodeURL,
-		url.QueryEscape(query),
-		h.apiKey,
-	)
+	params := url.Values{}
+	params.Set("query", query)
+	params.Set("region", "in")
+	params.Set("key", h.apiKey)
+	reqURL := placesTextSearchURL + "?" + params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {

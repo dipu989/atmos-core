@@ -24,7 +24,7 @@ func TestIsReceiptSource(t *testing.T) {
 		{actdomain.SourceRapido, true},
 		{actdomain.SourceNammaYatri, true},
 		{actdomain.SourceGPS, false},
-		{actdomain.SourceGPSReceipt, false},
+		{actdomain.SourceGPSReceipt, true}, // already-merged rows remain visible for retry/split-session dedup
 		{actdomain.SourceManual, false},
 		{actdomain.SourceHealth, false},
 	}

@@ -147,10 +147,14 @@ func (r *ActivityRepository) EnrichFromReceipt(ctx context.Context, id uuid.UUID
 	// activity already has (non-nil GPS coords are not overwritten).
 	if input.OriginLat != nil {
 		updates["origin_lat"] = *input.OriginLat
+	}
+	if input.OriginLng != nil {
 		updates["origin_lng"] = *input.OriginLng
 	}
 	if input.DestLat != nil {
 		updates["dest_lat"] = *input.DestLat
+	}
+	if input.DestLng != nil {
 		updates["dest_lng"] = *input.DestLng
 	}
 	return r.db.WithContext(ctx).

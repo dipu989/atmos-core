@@ -41,11 +41,15 @@ type SignalScores struct {
 // MatchResult is the output of Score(). Confidence is the weighted sum of the
 // four signal scores. HasCoords is false when at least one candidate lacked
 // destination coordinates — callers should apply a stricter merge threshold
-// (0.75 instead of 0.65) in that case.
+// (0.75 instead of 0.65) in that case. HasEndTime is false when at least one
+// candidate's end time was unknown and the 60-minute fallback was used; callers
+// should also apply the stricter threshold in that case to avoid false-positive
+// merges driven by the phantom window.
 type MatchResult struct {
 	Confidence float64
 	Signals    SignalScores
 	HasCoords  bool
+	HasEndTime bool
 }
 
 // Confidence thresholds — exported so callers can apply consistent rules.
@@ -71,6 +75,7 @@ func Score(a, b TripCandidate) MatchResult {
 
 	// Hard gate 2: zero time overlap. Trips on different time windows cannot
 	// be duplicates regardless of other signals.
+	hasEndTime := hasKnownEnd(a) && hasKnownEnd(b)
 	aEnd := effectiveEnd(a)
 	bEnd := effectiveEnd(b)
 	overlapScore, overlapRatio := timeOverlapScore(a.StartedAt, aEnd, b.StartedAt, bEnd)
@@ -95,14 +100,23 @@ func Score(a, b TripCandidate) MatchResult {
 		Confidence: math.Round(confidence*1000) / 1000,
 		Signals:    signals,
 		HasCoords:  hasDestCoords,
+		HasEndTime: hasEndTime,
 	}
 }
 
 // ------------------- signal scorers -------------------
 
+// hasKnownEnd reports whether c has a reliable end time (EndedAt or DurationMinutes).
+// When false, effectiveEnd uses a fallback estimate and callers should apply
+// the stricter ThresholdAutoMergeNoCoord to prevent phantom-window false positives.
+func hasKnownEnd(c TripCandidate) bool {
+	return c.EndedAt != nil || c.DurationMinutes != nil
+}
+
 // effectiveEnd returns the EndedAt time, or StartedAt + DurationMinutes if
 // EndedAt is nil. If neither is available, falls back to StartedAt + 60 min
-// as a conservative estimate.
+// as a conservative estimate. Callers should check hasKnownEnd() and apply
+// the stricter merge threshold when this fallback is in use.
 func effectiveEnd(c TripCandidate) time.Time {
 	if c.EndedAt != nil {
 		return *c.EndedAt
