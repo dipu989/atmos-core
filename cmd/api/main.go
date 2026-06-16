@@ -165,6 +165,7 @@ func main() {
 	bus.Subscribe(emidomain.EventEmissionCalculated, timelineSvc.HandleEmissionCalculated)
 	bus.Subscribe(emidomain.EventEmissionCalculated, insightSvc.HandleEmissionCalculated)
 	bus.Subscribe(insightdomain.EventInsightCreated, notifSvc.HandleInsightCreated)
+	bus.Subscribe(actdomain.EventActivityPossibleDuplicate, notifSvc.HandleActivityPossibleDuplicate)
 
 	// --- Handlers ---
 	authH := authhandler.NewAuthHandler(authSvc, cfg.App.FrontendURL)

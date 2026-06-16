@@ -93,8 +93,17 @@ func (r *ActivityRepository) ExistsByReceiptID(ctx context.Context, receiptID st
 func (r *ActivityRepository) FindCandidatesInWindow(ctx context.Context, userID uuid.UUID, from, to time.Time, bufferMinutes int) ([]domain.Activity, error) {
 	var activities []domain.Activity
 	buf := time.Duration(bufferMinutes) * time.Minute
+	// The ended_at IS NULL arm is anchored with a 24-hour look-back on started_at so that
+	// stale open sessions (e.g. from an app crash days ago) are not returned as candidates.
+	anchor := from.Add(-24 * time.Hour)
 	err := r.db.WithContext(ctx).
-		Where("user_id = ? AND started_at <= ? AND (ended_at IS NULL OR ended_at >= ?)", userID, to.Add(buf), from.Add(-buf)).
+		Where(
+			"user_id = ? AND started_at <= ? AND ("+
+				"(ended_at IS NULL AND started_at >= ?) OR "+
+				"ended_at >= ?"+
+				")",
+			userID, to.Add(buf), anchor, from.Add(-buf),
+		).
 		Find(&activities).Error
 	return activities, err
 }

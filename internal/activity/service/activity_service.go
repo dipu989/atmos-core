@@ -75,9 +75,22 @@ func (s *ActivityService) Ingest(ctx context.Context, input IngestInput) (*actdo
 			return enriched, nil
 		}
 		if matchConf != nil {
-			// Review-range match: create the GPS activity and tag it with the
-			// confidence so a "possible duplicate" notification can be shown later.
-			return s.createActivity(ctx, input, key, matchConf)
+			// Review-range match: create the GPS activity and notify the user.
+			act, err := s.createActivity(ctx, input, key, matchConf)
+			if err != nil {
+				return nil, err
+			}
+			s.bus.Publish(ctx, eventbus.Event{
+				Type: actdomain.EventActivityPossibleDuplicate,
+				Payload: actdomain.ActivityPossibleDuplicatePayload{
+					ActivityID:      act.ID,
+					UserID:          act.UserID,
+					MatchConfidence: *matchConf,
+					StartedAt:       act.StartedAt,
+					UserTimezone:    input.UserTimezone,
+				},
+			})
+			return act, nil
 		}
 	}
 
@@ -201,7 +214,6 @@ func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput
 	}
 
 	// Below auto-merge: create a receipt activity.
-	// Store the match confidence so Task 8 can surface a "possible duplicate" notification.
 	var matchConf *float64
 	if best != nil && best.result.Confidence >= tripmatcher.ThresholdReview {
 		c := best.result.Confidence
@@ -211,6 +223,18 @@ func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput
 	activity, err := s.createActivity(ctx, input, key, matchConf)
 	if err != nil {
 		return nil, false, err
+	}
+	if matchConf != nil {
+		s.bus.Publish(ctx, eventbus.Event{
+			Type: actdomain.EventActivityPossibleDuplicate,
+			Payload: actdomain.ActivityPossibleDuplicatePayload{
+				ActivityID:      activity.ID,
+				UserID:          activity.UserID,
+				MatchConfidence: *matchConf,
+				StartedAt:       activity.StartedAt,
+				UserTimezone:    input.UserTimezone,
+			},
+		})
 	}
 	return activity, false, nil
 }
@@ -324,13 +348,19 @@ func buildEnrichInput(input IngestInput, gps actdomain.Activity, confidence floa
 	if input.Provider != nil {
 		e.Provider = *input.Provider
 	}
-	// Only copy receipt coords into GPS activity when the GPS row has no coords.
+	// Only copy receipt coords into GPS activity when the GPS row has no value for that column.
+	// Each column is guarded independently — a partial GPS fix (Lat set, Lng nil) must not
+	// block the receipt from filling in the missing Lng.
 	if gps.OriginLat == nil && input.OriginLat != nil {
 		e.OriginLat = input.OriginLat
+	}
+	if gps.OriginLng == nil && input.OriginLng != nil {
 		e.OriginLng = input.OriginLng
 	}
 	if gps.DestLat == nil && input.DestLat != nil {
 		e.DestLat = input.DestLat
+	}
+	if gps.DestLng == nil && input.DestLng != nil {
 		e.DestLng = input.DestLng
 	}
 	return e

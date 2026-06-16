@@ -3,7 +3,10 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
 	devdomain "github.com/dipu/atmos-core/internal/device/domain"
 	devrepo "github.com/dipu/atmos-core/internal/device/repository"
 	insightdomain "github.com/dipu/atmos-core/internal/insight/domain"
@@ -60,6 +63,64 @@ func (s *NotificationService) HandleInsightCreated(ctx context.Context, event ev
 			Data: map[string]string{
 				"insight_id": insight.ID.String(),
 				"type":       string(insight.InsightType),
+			},
+		}
+
+		if err := s.fcm.Send(ctx, msg); err != nil {
+			log.Warn("notification: FCM send failed",
+				zap.String("device_id", device.ID.String()),
+				zap.Error(err),
+			)
+		} else {
+			log.Info("notification: push sent",
+				zap.String("device_id", device.ID.String()),
+			)
+		}
+	}
+}
+
+// HandleActivityPossibleDuplicate is subscribed to EventActivityPossibleDuplicate.
+// It notifies the user when a new activity scores in the review range against an
+// existing one, prompting them to check whether it is a duplicate.
+func (s *NotificationService) HandleActivityPossibleDuplicate(ctx context.Context, event eventbus.Event) {
+	if s.fcm == nil {
+		return
+	}
+
+	payload, ok := event.Payload.(actdomain.ActivityPossibleDuplicatePayload)
+	if !ok {
+		return
+	}
+
+	log := logger.L().With(
+		zap.String("user_id", payload.UserID.String()),
+		zap.String("activity_id", payload.ActivityID.String()),
+	)
+
+	devices, err := s.deviceRepo.ListActiveByUser(ctx, payload.UserID)
+	if err != nil {
+		log.Warn("notification: list devices failed", zap.Error(err))
+		return
+	}
+
+	for _, device := range devices {
+		if !s.shouldPush(device) {
+			continue
+		}
+
+		loc := time.UTC
+		if payload.UserTimezone != "" {
+			if l, err := time.LoadLocation(payload.UserTimezone); err == nil {
+				loc = l
+			}
+		}
+		msg := push.Message{
+			Token: *device.PushToken,
+			Title: "Possible duplicate trip",
+			Body:  fmt.Sprintf("A trip logged at %s may already exist. Tap to review.", payload.StartedAt.In(loc).Format("3:04 PM")),
+			Data: map[string]string{
+				"type":        "possible_duplicate",
+				"activity_id": payload.ActivityID.String(),
 			},
 		}
 
