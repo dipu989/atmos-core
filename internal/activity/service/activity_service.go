@@ -87,6 +87,7 @@ func (s *ActivityService) Ingest(ctx context.Context, input IngestInput) (*actdo
 					UserID:          act.UserID,
 					MatchConfidence: *matchConf,
 					StartedAt:       act.StartedAt,
+					UserTimezone:    input.UserTimezone,
 				},
 			})
 			return act, nil
@@ -231,6 +232,7 @@ func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput
 				UserID:          activity.UserID,
 				MatchConfidence: *matchConf,
 				StartedAt:       activity.StartedAt,
+				UserTimezone:    input.UserTimezone,
 			},
 		})
 	}
@@ -346,13 +348,19 @@ func buildEnrichInput(input IngestInput, gps actdomain.Activity, confidence floa
 	if input.Provider != nil {
 		e.Provider = *input.Provider
 	}
-	// Only copy receipt coords into GPS activity when the GPS row has no coords.
+	// Only copy receipt coords into GPS activity when the GPS row has no value for that column.
+	// Each column is guarded independently — a partial GPS fix (Lat set, Lng nil) must not
+	// block the receipt from filling in the missing Lng.
 	if gps.OriginLat == nil && input.OriginLat != nil {
 		e.OriginLat = input.OriginLat
+	}
+	if gps.OriginLng == nil && input.OriginLng != nil {
 		e.OriginLng = input.OriginLng
 	}
 	if gps.DestLat == nil && input.DestLat != nil {
 		e.DestLat = input.DestLat
+	}
+	if gps.DestLng == nil && input.DestLng != nil {
 		e.DestLng = input.DestLng
 	}
 	return e

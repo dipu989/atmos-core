@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
 	devdomain "github.com/dipu/atmos-core/internal/device/domain"
@@ -107,10 +108,16 @@ func (s *NotificationService) HandleActivityPossibleDuplicate(ctx context.Contex
 			continue
 		}
 
+		loc := time.UTC
+		if payload.UserTimezone != "" {
+			if l, err := time.LoadLocation(payload.UserTimezone); err == nil {
+				loc = l
+			}
+		}
 		msg := push.Message{
 			Token: *device.PushToken,
 			Title: "Possible duplicate trip",
-			Body:  fmt.Sprintf("A trip logged at %s may already exist. Tap to review.", payload.StartedAt.Format("3:04 PM")),
+			Body:  fmt.Sprintf("A trip logged at %s may already exist. Tap to review.", payload.StartedAt.In(loc).Format("3:04 PM")),
 			Data: map[string]string{
 				"type":        "possible_duplicate",
 				"activity_id": payload.ActivityID.String(),

@@ -31,4 +31,5 @@ type ActivityPossibleDuplicatePayload struct {
 	UserID          uuid.UUID
 	MatchConfidence float64
 	StartedAt       time.Time
+	UserTimezone    string // IANA tz string; empty falls back to UTC
 }
