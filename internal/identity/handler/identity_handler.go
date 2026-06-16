@@ -45,12 +45,10 @@ func (h *IdentityHandler) DeleteAccount(c *fiber.Ctx) error {
 	}
 
 	userID := middleware.CurrentUserID(c)
-	if err := h.svc.DeleteAccount(c.Context(), userID, req.Password, req.Confirmation); err != nil {
+	if err := h.svc.DeleteAccount(c.Context(), userID, req.Confirmation); err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidPassword):
-			return response.BadRequest(c, "incorrect password")
 		case errors.Is(err, service.ErrInvalidConfirmation):
-			return response.BadRequest(c, `confirmation must be the exact string "delete my account"`)
+			return response.BadRequest(c, `type the word "delete" to confirm`)
 		case errors.Is(err, service.ErrNotFound):
 			return response.NotFound(c, "user not found")
 		default:

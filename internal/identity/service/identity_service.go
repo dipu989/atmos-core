@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	authrepo "github.com/dipu/atmos-core/internal/auth/repository"
@@ -10,13 +11,11 @@ import (
 	"github.com/dipu/atmos-core/internal/identity/repository"
 	pkguuid "github.com/dipu/atmos-core/platform/uuid"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 var (
 	ErrNotFound            = errors.New("user not found")
-	ErrInvalidPassword     = errors.New("incorrect password")
 	ErrInvalidConfirmation = errors.New("confirmation text does not match")
 )
 
@@ -140,27 +139,14 @@ func (s *IdentityService) UpdatePreferences(ctx context.Context, userID uuid.UUI
 // ── Account deletion ──────────────────────────────────────────────────────────
 
 // DeleteAccount soft-deletes the user's account and revokes all their sessions.
-// Email+password accounts must supply their current password.
-// OAuth-only accounts must supply the exact string "delete my account".
-func (s *IdentityService) DeleteAccount(ctx context.Context, userID uuid.UUID, password, confirmation string) error {
-	user, err := s.repo.FindByID(ctx, userID)
-	if err != nil || user == nil {
-		return ErrNotFound
+// All accounts must supply the exact string "delete" as confirmation.
+func (s *IdentityService) DeleteAccount(ctx context.Context, userID uuid.UUID, confirmation string) error {
+	if strings.ToLower(strings.TrimSpace(confirmation)) != "delete" {
+		return ErrInvalidConfirmation
 	}
 
-	if user.PasswordHash != nil {
-		// Email+password account — verify password.
-		if password == "" {
-			return ErrInvalidPassword
-		}
-		if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
-			return ErrInvalidPassword
-		}
-	} else {
-		// OAuth-only account — require explicit confirmation string.
-		if confirmation != "delete my account" {
-			return ErrInvalidConfirmation
-		}
+	if _, err := s.repo.FindByID(ctx, userID); err != nil {
+		return ErrNotFound
 	}
 
 	if err := s.repo.SoftDelete(ctx, userID); err != nil {
