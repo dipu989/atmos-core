@@ -41,6 +41,8 @@ type IngestInput struct {
 	UserTimezone    string
 	IdempotencyKey  string
 	// Dedup fields
+	Origin       *string
+	Destination  *string
 	OriginLat    *float64
 	OriginLng    *float64
 	DestLat      *float64
@@ -266,6 +268,8 @@ func (s *ActivityService) createActivity(ctx context.Context, input IngestInput,
 		DateLocal:       dateLocal,
 		IdempotencyKey:  key,
 		Status:          actdomain.StatusPending,
+		Origin:          input.Origin,
+		Destination:     input.Destination,
 		OriginLat:       input.OriginLat,
 		OriginLng:       input.OriginLng,
 		DestLat:         input.DestLat,
@@ -347,6 +351,13 @@ func buildEnrichInput(input IngestInput, gps actdomain.Activity, confidence floa
 	}
 	if input.Provider != nil {
 		e.Provider = *input.Provider
+	}
+	// Receipt wins for human-readable addresses — GPS has none.
+	if input.Origin != nil {
+		e.Origin = *input.Origin
+	}
+	if input.Destination != nil {
+		e.Destination = *input.Destination
 	}
 	// Only copy receipt coords into GPS activity when the GPS row has no value for that column.
 	// Each column is guarded independently — a partial GPS fix (Lat set, Lng nil) must not

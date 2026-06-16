@@ -67,6 +67,8 @@ type Activity struct {
 	Status          ActivityStatus `gorm:"not null;default:'pending'" json:"status"`
 	FailureReason   *string        `json:"failure_reason,omitempty"`
 	// Dedup fields — populated by GPS tracking and/or receipt ingestion.
+	Origin          *string   `json:"origin,omitempty"`
+	Destination     *string   `json:"destination,omitempty"`
 	OriginLat       *float64  `gorm:"type:double precision"      json:"origin_lat,omitempty"`
 	OriginLng       *float64  `gorm:"type:double precision"      json:"origin_lng,omitempty"`
 	DestLat         *float64  `gorm:"type:double precision"      json:"dest_lat,omitempty"`
