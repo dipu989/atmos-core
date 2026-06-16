@@ -36,6 +36,27 @@ func (h *GmailHandler) Connect(c *fiber.Ctx) error {
 	return c.Redirect(authURL, fiber.StatusFound)
 }
 
+// AuthURL godoc
+// @Summary     Get Gmail OAuth URL
+// @Description Returns the Google consent-page URL as JSON so mobile clients
+//
+//	can open it in the system browser without a server-side redirect.
+//
+// @Tags        gmail
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string]interface{}
+// @Failure     401 {object} map[string]interface{}
+// @Router      /gmail/auth-url [get]
+func (h *GmailHandler) AuthURL(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	url := h.svc.AuthURL(userID)
+	if url == "" {
+		return response.InternalError(c, "gmail OAuth not configured")
+	}
+	return response.OK(c, fiber.Map{"url": url})
+}
+
 // Callback godoc
 // @Summary     Gmail OAuth callback
 // @Description Exchanges the auth code for tokens and stores them.

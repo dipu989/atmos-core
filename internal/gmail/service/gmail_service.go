@@ -108,8 +108,12 @@ func NewGmailService(
 // ── OAuth connect / disconnect ────────────────────────────────────────────────
 
 // AuthURL generates the Google consent-page URL.
+// Returns an empty string if Google OAuth is not configured (missing ClientID).
 // The userID is embedded in a signed state parameter — no session cookie needed.
 func (s *GmailService) AuthURL(userID uuid.UUID) string {
+	if s.oauthCfg.ClientID == "" {
+		return ""
+	}
 	return s.oauthCfg.AuthCodeURL(
 		s.signState(userID.String()),
 		oauth2.AccessTypeOffline,

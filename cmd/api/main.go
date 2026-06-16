@@ -255,6 +255,7 @@ func main() {
 	// /gmail/connect  → starts OAuth (requires auth so we know the user)
 	// /gmail/callback → unauthenticated (Google redirects here with ?code=&state=)
 	protected.Get("/gmail/connect", gmailH.Connect)
+	protected.Get("/gmail/auth-url", gmailH.AuthURL)
 	protected.Get("/gmail/status", gmailH.Status)
 	protected.Delete("/gmail/disconnect", gmailH.Disconnect)
 	protected.Post("/gmail/sync", gmailH.Sync)
