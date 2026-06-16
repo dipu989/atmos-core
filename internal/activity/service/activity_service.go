@@ -63,6 +63,24 @@ func (s *ActivityService) Ingest(ctx context.Context, input IngestInput) (*actdo
 	if exists {
 		return nil, ErrDuplicate
 	}
+
+	// GPS dedup (Task 5): before creating a new GPS row, check whether a
+	// receipt activity already covers this trip and merge into it instead.
+	if input.Source == actdomain.SourceGPS {
+		enriched, matchConf, err := s.tryMergeGPSWithReceipt(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		if enriched != nil {
+			return enriched, nil
+		}
+		if matchConf != nil {
+			// Review-range match: create the GPS activity and tag it with the
+			// confidence so a "possible duplicate" notification can be shown later.
+			return s.createActivity(ctx, input, key, matchConf)
+		}
+	}
+
 	return s.createActivity(ctx, input, key, nil)
 }
 
@@ -312,6 +330,120 @@ func buildEnrichInput(input IngestInput, gps actdomain.Activity, confidence floa
 		e.OriginLng = input.OriginLng
 	}
 	if gps.DestLat == nil && input.DestLat != nil {
+		e.DestLat = input.DestLat
+		e.DestLng = input.DestLng
+	}
+	return e
+}
+
+// tryMergeGPSWithReceipt searches for a receipt-sourced activity that matches
+// the incoming GPS trip and merges GPS coordinates into it if the confidence
+// is high enough. It mirrors IngestWithDedup but in the GPS→receipt direction.
+//
+// Returns:
+//   - (enriched, nil, nil)   — auto-merged; caller should return enriched
+//   - (nil, &conf, nil)      — review-range match; caller creates GPS with this confidence
+//   - (nil, nil, nil)        — no match; caller creates GPS normally
+func (s *ActivityService) tryMergeGPSWithReceipt(ctx context.Context, input IngestInput) (*actdomain.Activity, *float64, error) {
+	endedAt := input.EndedAt
+	if endedAt == nil && input.DurationMinutes != nil {
+		end := input.StartedAt.Add(time.Duration(*input.DurationMinutes) * time.Minute)
+		endedAt = &end
+	}
+	windowEnd := input.StartedAt
+	if endedAt != nil {
+		windowEnd = *endedAt
+	}
+
+	candidates, err := s.repo.FindCandidatesInWindow(ctx, input.UserID, input.StartedAt, windowEnd, dedupCandidateWindow)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	gpsCandidate := tripCandidateFromInput(input, endedAt)
+
+	type scored struct {
+		activity actdomain.Activity
+		result   tripmatcher.MatchResult
+	}
+	var best *scored
+
+	for _, c := range candidates {
+		if !isReceiptSource(c.Source) {
+			continue
+		}
+		r := tripmatcher.Score(gpsCandidate, tripCandidateFromActivity(c))
+		if best == nil || r.Confidence > best.result.Confidence {
+			cp := c
+			best = &scored{activity: cp, result: r}
+		}
+	}
+
+	if best == nil {
+		return nil, nil, nil
+	}
+
+	autoMergeThreshold := tripmatcher.ThresholdAutoMerge
+	if !best.result.HasCoords {
+		autoMergeThreshold = tripmatcher.ThresholdAutoMergeNoCoord
+	}
+
+	if best.result.Confidence >= autoMergeThreshold {
+		enrichInput := buildGPSEnrichInput(input, best.result.Confidence)
+		if err := s.repo.EnrichFromReceipt(ctx, best.activity.ID, enrichInput); err != nil {
+			return nil, nil, fmt.Errorf("enrich receipt with GPS: %w", err)
+		}
+		enriched, err := s.repo.FindByID(ctx, best.activity.ID, input.UserID)
+		if err != nil {
+			return nil, nil, err
+		}
+		s.bus.Publish(ctx, eventbus.Event{
+			Type: actdomain.EventActivityIngested,
+			Payload: actdomain.ActivityIngestedPayload{
+				ActivityID:    enriched.ID,
+				UserID:        enriched.UserID,
+				ActivityType:  enriched.ActivityType,
+				TransportMode: enriched.TransportMode,
+				DistanceKM:    enriched.DistanceKM,
+				StartedAt:     enriched.StartedAt,
+				DateLocal:     enriched.DateLocal,
+				RawMetadata:   enriched.RawMetadata,
+			},
+		})
+		return enriched, nil, nil
+	}
+
+	if best.result.Confidence >= tripmatcher.ThresholdReview {
+		c := best.result.Confidence
+		return nil, &c, nil
+	}
+
+	return nil, nil, nil
+}
+
+// isReceiptSource reports whether an activity came from a receipt-based ingestion
+// path. These are the candidates that an incoming GPS trip can be merged into.
+func isReceiptSource(src actdomain.ActivitySource) bool {
+	switch src {
+	case actdomain.SourceGmail, actdomain.SourceUber, actdomain.SourceOla,
+		actdomain.SourceRapido, actdomain.SourceNammaYatri:
+		return true
+	}
+	return false
+}
+
+// buildGPSEnrichInput constructs the update payload for a GPS→receipt merge.
+// GPS wins for coordinates (ground-truth tracking); receipt keeps its fare,
+// distance, duration, and provider.
+func buildGPSEnrichInput(input IngestInput, confidence float64) repository.EnrichReceiptInput {
+	e := repository.EnrichReceiptInput{
+		MatchConfidence: confidence,
+	}
+	if input.OriginLat != nil {
+		e.OriginLat = input.OriginLat
+		e.OriginLng = input.OriginLng
+	}
+	if input.DestLat != nil {
 		e.DestLat = input.DestLat
 		e.DestLng = input.DestLng
 	}
