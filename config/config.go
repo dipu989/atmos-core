@@ -60,6 +60,7 @@ type GoogleOAuthConfig struct {
 	ClientSecret     string
 	RedirectURL      string // For web Sign-In callback
 	GmailRedirectURL string // GOOGLE_GMAIL_REDIRECT_URL — for Gmail connect callback
+	MapsAPIKey       string // GOOGLE_MAPS_API_KEY — optional; enables address geocoding
 }
 
 func Load() (*Config, error) {
@@ -106,6 +107,7 @@ func Load() (*Config, error) {
 			ClientSecret:     getEnv("GOOGLE_CLIENT_SECRET", ""),
 			RedirectURL:      getEnv("GOOGLE_REDIRECT_URL", ""),
 			GmailRedirectURL: getEnv("GOOGLE_GMAIL_REDIRECT_URL", ""),
+			MapsAPIKey:       getEnv("GOOGLE_MAPS_API_KEY", ""),
 		},
 		Email: EmailConfig{
 			Region:   getEnv("AWS_REGION", "ap-south-1"),

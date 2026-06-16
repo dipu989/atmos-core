@@ -50,6 +50,7 @@ import (
 	insightrepo "github.com/dipu/atmos-core/internal/insight/repository"
 	insightservice "github.com/dipu/atmos-core/internal/insight/service"
 	notifservice "github.com/dipu/atmos-core/internal/notification/service"
+	placeshandler "github.com/dipu/atmos-core/internal/places"
 	timelineagg "github.com/dipu/atmos-core/internal/timeline/aggregator"
 	timelinehandler "github.com/dipu/atmos-core/internal/timeline/handler"
 	timelinerepo "github.com/dipu/atmos-core/internal/timeline/repository"
@@ -151,6 +152,7 @@ func main() {
 			ClientSecret: cfg.Google.ClientSecret,
 			RedirectURL:  cfg.Google.GmailRedirectURL,
 			HMACSecret:   cfg.JWT.AccessSecret,
+			MapsAPIKey:   cfg.Google.MapsAPIKey,
 		},
 		gmailConnRepo,
 		gmailLogRepo,
@@ -173,6 +175,7 @@ func main() {
 	insightH := insighthandler.NewInsightHandler(insightSvc)
 	gmailH := gmailhandler.NewGmailHandler(gmailSvc)
 	providerH := gmailhandler.NewProviderHandler(gmailProvRepo)
+	placesH := placeshandler.NewHandler(cfg.Google.MapsAPIKey)
 
 	// --- Fiber app ---
 	app := fiber.New(fiber.Config{
@@ -226,6 +229,8 @@ func main() {
 	protected.Get("/devices", deviceH.List)
 	protected.Patch("/devices/:id", deviceH.UpdatePushToken)
 	protected.Delete("/devices/:id", deviceH.Deregister)
+
+	protected.Get("/places/autocomplete", placesH.Autocomplete)
 
 	protected.Post("/activities", activityH.Ingest)
 	protected.Get("/activities", activityH.ListActivities)

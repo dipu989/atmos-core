@@ -12,12 +12,19 @@ type IngestActivityRequest struct {
 	TransportMode   string         `json:"transport_mode"   validate:"required,oneof=walking cycling metro train car cab flight bus walk bicycle auto_rickshaw two_wheeler"`
 	DistanceKM      *float64       `json:"distance_km"      validate:"required,gt=0"`
 	DurationMinutes *int           `json:"duration_minutes" validate:"omitempty,min=1"`
-	Source          string         `json:"source"           validate:"required,oneof=manual uber ola rapido namma_yatri gmail health_kit"`
+	Source          string         `json:"source"           validate:"required,oneof=manual gps uber ola rapido namma_yatri gmail health_kit"`
 	Metadata        map[string]any `json:"metadata"`
 	StartedAt       time.Time      `json:"started_at"       validate:"required"`
 	EndedAt         *time.Time     `json:"ended_at"`
 	// IdempotencyKey is optional. When omitted the server derives one from stable fields.
 	IdempotencyKey string `json:"idempotency_key"`
+	// Dedup fields — GPS coordinates for trip origin/destination.
+	OriginLat    *float64 `json:"origin_lat"    validate:"omitempty,min=-90,max=90"`
+	OriginLng    *float64 `json:"origin_lng"    validate:"omitempty,min=-180,max=180"`
+	DestLat      *float64 `json:"dest_lat"      validate:"omitempty,min=-90,max=90"`
+	DestLng      *float64 `json:"dest_lng"      validate:"omitempty,min=-180,max=180"`
+	FareAmount   *float64 `json:"fare_amount"   validate:"omitempty,gt=0"`
+	FareCurrency *string  `json:"fare_currency"`
 }
 
 // UpdateActivityRequest is the body for PATCH /activities/:id.

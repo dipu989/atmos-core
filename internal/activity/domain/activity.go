@@ -34,6 +34,8 @@ const (
 	ModeFlight       TransportMode = "flight"
 
 	SourceManual     ActivitySource = "manual"
+	SourceGPS        ActivitySource = "gps"
+	SourceGPSReceipt ActivitySource = "gps+receipt" // GPS trip enriched with a matched receipt
 	SourceUber       ActivitySource = "uber"
 	SourceOla        ActivitySource = "ola"
 	SourceRapido     ActivitySource = "rapido"
@@ -64,8 +66,17 @@ type Activity struct {
 	IdempotencyKey  string         `gorm:"uniqueIndex;not null"       json:"-"`
 	Status          ActivityStatus `gorm:"not null;default:'pending'" json:"status"`
 	FailureReason   *string        `json:"failure_reason,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	// Dedup fields — populated by GPS tracking and/or receipt ingestion.
+	OriginLat       *float64  `gorm:"type:double precision"      json:"origin_lat,omitempty"`
+	OriginLng       *float64  `gorm:"type:double precision"      json:"origin_lng,omitempty"`
+	DestLat         *float64  `gorm:"type:double precision"      json:"dest_lat,omitempty"`
+	DestLng         *float64  `gorm:"type:double precision"      json:"dest_lng,omitempty"`
+	ReceiptID       *string   `json:"receipt_id,omitempty"`
+	FareAmount      *float64  `gorm:"type:numeric(10,2)"         json:"fare_amount,omitempty"`
+	FareCurrency    *string   `json:"fare_currency,omitempty"`
+	MatchConfidence *float64  `gorm:"type:numeric(4,3)"          json:"match_confidence,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func (Activity) TableName() string { return "activities" }

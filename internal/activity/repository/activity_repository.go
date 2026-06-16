@@ -80,3 +80,85 @@ func (r *ActivityRepository) ExistsByIdempotencyKey(ctx context.Context, key str
 	err := r.db.WithContext(ctx).Model(&domain.Activity{}).Where("idempotency_key = ?", key).Count(&count).Error
 	return count > 0, err
 }
+
+func (r *ActivityRepository) ExistsByReceiptID(ctx context.Context, receiptID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.Activity{}).Where("receipt_id = ?", receiptID).Count(&count).Error
+	return count > 0, err
+}
+
+// FindCandidatesInWindow returns activities for a user that overlap a given time window.
+// Used by the TripMatcher to find dedup candidates. The window is expanded by bufferMinutes
+// on each side to account for GPS start-time jitter.
+func (r *ActivityRepository) FindCandidatesInWindow(ctx context.Context, userID uuid.UUID, from, to time.Time, bufferMinutes int) ([]domain.Activity, error) {
+	var activities []domain.Activity
+	buf := time.Duration(bufferMinutes) * time.Minute
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND started_at <= ? AND (ended_at IS NULL OR ended_at >= ?)", userID, to.Add(buf), from.Add(-buf)).
+		Find(&activities).Error
+	return activities, err
+}
+
+// EnrichReceiptInput carries the receipt fields merged into an existing GPS activity.
+type EnrichReceiptInput struct {
+	ReceiptID       string
+	Provider        string
+	FareAmount      *float64
+	FareCurrency    *string
+	DistanceKM      *float64
+	DurationMinutes *int
+	// Coords are only applied when the existing activity has nil values for them.
+	OriginLat *float64
+	OriginLng *float64
+	DestLat   *float64
+	DestLng   *float64
+	// MatchConfidence records the dedup score for auditability.
+	MatchConfidence float64
+}
+
+// EnrichFromReceipt merges receipt data into an existing GPS activity.
+// Field priority: GPS keeps its coords; receipt wins for fare/distance/duration/provider.
+// The activity's source is updated to "gps+receipt".
+func (r *ActivityRepository) EnrichFromReceipt(ctx context.Context, id uuid.UUID, input EnrichReceiptInput) error {
+	updates := map[string]any{
+		"source":           domain.SourceGPSReceipt,
+		"match_confidence": input.MatchConfidence,
+	}
+	if input.ReceiptID != "" {
+		updates["receipt_id"] = input.ReceiptID
+	}
+	if input.Provider != "" {
+		updates["provider"] = input.Provider
+	}
+	if input.FareAmount != nil {
+		updates["fare_amount"] = *input.FareAmount
+	}
+	if input.FareCurrency != nil {
+		updates["fare_currency"] = *input.FareCurrency
+	}
+	if input.DistanceKM != nil {
+		updates["distance_km"] = *input.DistanceKM
+	}
+	if input.DurationMinutes != nil {
+		updates["duration_minutes"] = *input.DurationMinutes
+	}
+	// Coords are applied only when the caller explicitly provides them.
+	// The service layer decides which fields to pass based on what the GPS
+	// activity already has (non-nil GPS coords are not overwritten).
+	if input.OriginLat != nil {
+		updates["origin_lat"] = *input.OriginLat
+	}
+	if input.OriginLng != nil {
+		updates["origin_lng"] = *input.OriginLng
+	}
+	if input.DestLat != nil {
+		updates["dest_lat"] = *input.DestLat
+	}
+	if input.DestLng != nil {
+		updates["dest_lng"] = *input.DestLng
+	}
+	return r.db.WithContext(ctx).
+		Model(&domain.Activity{}).
+		Where("id = ?", id).
+		Updates(updates).Error
+}

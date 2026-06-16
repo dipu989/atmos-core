@@ -71,7 +71,11 @@ type UpdatePreferencesInput struct {
 	DailyGoalKgCO2e          *float64
 	DataSharingEnabled       *bool
 	HomeAddress              *string
+	HomeLat                  *float64
+	HomeLng                  *float64
 	WorkAddress              *string
+	WorkLat                  *float64
+	WorkLng                  *float64
 	DefaultTransport         *string
 }
 
@@ -107,8 +111,20 @@ func (s *IdentityService) UpdatePreferences(ctx context.Context, userID uuid.UUI
 	if input.HomeAddress != nil {
 		prefs.HomeAddress = input.HomeAddress
 	}
+	if input.HomeLat != nil {
+		prefs.HomeLat = input.HomeLat
+	}
+	if input.HomeLng != nil {
+		prefs.HomeLng = input.HomeLng
+	}
 	if input.WorkAddress != nil {
 		prefs.WorkAddress = input.WorkAddress
+	}
+	if input.WorkLat != nil {
+		prefs.WorkLat = input.WorkLat
+	}
+	if input.WorkLng != nil {
+		prefs.WorkLng = input.WorkLng
 	}
 	if input.DefaultTransport != nil {
 		prefs.DefaultTransport = input.DefaultTransport
