@@ -112,6 +112,8 @@ func (r *ActivityRepository) FindCandidatesInWindow(ctx context.Context, userID 
 type EnrichReceiptInput struct {
 	ReceiptID       string
 	Provider        string
+	Origin          string
+	Destination     string
 	FareAmount      *float64
 	FareCurrency    *string
 	DistanceKM      *float64
@@ -138,6 +140,12 @@ func (r *ActivityRepository) EnrichFromReceipt(ctx context.Context, id uuid.UUID
 	}
 	if input.Provider != "" {
 		updates["provider"] = input.Provider
+	}
+	if input.Origin != "" {
+		updates["origin"] = input.Origin
+	}
+	if input.Destination != "" {
+		updates["destination"] = input.Destination
 	}
 	if input.FareAmount != nil {
 		updates["fare_amount"] = *input.FareAmount

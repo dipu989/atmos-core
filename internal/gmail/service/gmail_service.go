@@ -637,6 +637,13 @@ func (s *GmailService) ingestRide(
 	// otherwise a new receipt-sourced activity is created.
 	// Layer 2 idempotency: "gmail:<messageId>" ensures replay safety.
 	receiptID := messageID
+	var originPtr, destinationPtr *string
+	if ride.PickupAddress != "" {
+		originPtr = &ride.PickupAddress
+	}
+	if ride.DropAddress != "" {
+		destinationPtr = &ride.DropAddress
+	}
 	activity, _, err := s.activitySvc.IngestWithDedup(ctx, actservice.IngestInput{
 		UserID:          userID,
 		ActivityType:    actType,
@@ -650,6 +657,8 @@ func (s *GmailService) ingestRide(
 		EndedAt:         endedAt,
 		UserTimezone:    "UTC",
 		IdempotencyKey:  "gmail:" + messageID,
+		Origin:          originPtr,
+		Destination:     destinationPtr,
 		OriginLat:       pickupLat,
 		OriginLng:       pickupLng,
 		DestLat:         dropLat,
