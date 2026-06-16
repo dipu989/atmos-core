@@ -202,6 +202,10 @@ func main() {
 	api.Get("/providers", providerH.ListActive)
 	api.Get("/providers/all", providerH.ListAll)
 
+	// Gmail OAuth callback — unauthenticated (Google redirects here with ?code=&state=)
+	// Must be registered before api.Use(RequireAuth) or Fiber will apply auth middleware to it.
+	api.Get("/gmail/callback", gmailH.Callback)
+
 	// Auth (stricter rate limit on these endpoints)
 	auth := api.Group("/auth", middleware.RateLimitStrict())
 	auth.Post("/register", authH.Register)
@@ -260,8 +264,6 @@ func main() {
 	protected.Delete("/gmail/disconnect", gmailH.Disconnect)
 	protected.Post("/gmail/sync", gmailH.Sync)
 	protected.Get("/gmail/logs", gmailH.Logs)
-	// Callback is unauthenticated — user is identified via signed state parameter.
-	api.Get("/gmail/callback", gmailH.Callback)
 
 	// --- Internal endpoints (cron-triggered, not user-facing) ---
 	// Called by Linux cron: POST /internal/gmail/sync-all
