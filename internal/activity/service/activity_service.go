@@ -75,9 +75,21 @@ func (s *ActivityService) Ingest(ctx context.Context, input IngestInput) (*actdo
 			return enriched, nil
 		}
 		if matchConf != nil {
-			// Review-range match: create the GPS activity and tag it with the
-			// confidence so a "possible duplicate" notification can be shown later.
-			return s.createActivity(ctx, input, key, matchConf)
+			// Review-range match: create the GPS activity and notify the user.
+			act, err := s.createActivity(ctx, input, key, matchConf)
+			if err != nil {
+				return nil, err
+			}
+			s.bus.Publish(ctx, eventbus.Event{
+				Type: actdomain.EventActivityPossibleDuplicate,
+				Payload: actdomain.ActivityPossibleDuplicatePayload{
+					ActivityID:      act.ID,
+					UserID:          act.UserID,
+					MatchConfidence: *matchConf,
+					StartedAt:       act.StartedAt,
+				},
+			})
+			return act, nil
 		}
 	}
 
@@ -201,7 +213,6 @@ func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput
 	}
 
 	// Below auto-merge: create a receipt activity.
-	// Store the match confidence so Task 8 can surface a "possible duplicate" notification.
 	var matchConf *float64
 	if best != nil && best.result.Confidence >= tripmatcher.ThresholdReview {
 		c := best.result.Confidence
@@ -211,6 +222,17 @@ func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput
 	activity, err := s.createActivity(ctx, input, key, matchConf)
 	if err != nil {
 		return nil, false, err
+	}
+	if matchConf != nil {
+		s.bus.Publish(ctx, eventbus.Event{
+			Type: actdomain.EventActivityPossibleDuplicate,
+			Payload: actdomain.ActivityPossibleDuplicatePayload{
+				ActivityID:      activity.ID,
+				UserID:          activity.UserID,
+				MatchConfidence: *matchConf,
+				StartedAt:       activity.StartedAt,
+			},
+		})
 	}
 	return activity, false, nil
 }
