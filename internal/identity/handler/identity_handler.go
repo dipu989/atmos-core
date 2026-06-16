@@ -155,7 +155,11 @@ func (h *IdentityHandler) UpdatePreferences(c *fiber.Ctx) error {
 		DailyGoalKgCO2e:          req.DailyGoalKgCO2e,
 		DataSharingEnabled:       req.DataSharingEnabled,
 		HomeAddress:              req.HomeAddress,
+		HomeLat:                  req.HomeLat,
+		HomeLng:                  req.HomeLng,
 		WorkAddress:              req.WorkAddress,
+		WorkLat:                  req.WorkLat,
+		WorkLng:                  req.WorkLng,
 		DefaultTransport:         req.DefaultTransport,
 	})
 	if err != nil {
