@@ -41,16 +41,21 @@ func (h *GmailHandler) Connect(c *fiber.Ctx) error {
 // @Description Returns the Google consent-page URL as JSON so mobile clients
 //
 //	can open it in the system browser without a server-side redirect.
+//	Pass ?platform=mobile to embed a mobile platform hint in the signed
+//	state; the callback will then redirect to atmos://gmail/connected
+//	so the app can re-enter the foreground with the connection confirmed.
 //
 // @Tags        gmail
 // @Produce     json
 // @Security    BearerAuth
+// @Param       platform query string false "Target platform: mobile (deep-link callback) or omit for web"
 // @Success     200 {object} map[string]interface{}
 // @Failure     401 {object} map[string]interface{}
 // @Router      /gmail/auth-url [get]
 func (h *GmailHandler) AuthURL(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
-	url := h.svc.AuthURL(userID)
+	platform := c.Query("platform") // "mobile" or ""
+	url := h.svc.AuthURLForPlatform(userID, platform)
 	if url == "" {
 		return response.InternalError(c, "gmail OAuth not configured")
 	}
@@ -62,7 +67,8 @@ func (h *GmailHandler) AuthURL(c *fiber.Ctx) error {
 // @Description Exchanges the auth code for tokens and stores them.
 //
 //	Google redirects here after the user grants permission.
-//	On success, redirects back to the frontend.
+//	On success, redirects to atmos://gmail/connected for mobile flows,
+//	or to the frontend's settings page for web flows.
 //
 // @Tags        gmail
 // @Param       state query string true "OAuth state"
@@ -77,12 +83,15 @@ func (h *GmailHandler) Callback(c *fiber.Ctx) error {
 		return response.BadRequest(c, "missing state or code")
 	}
 
-	_, err := h.svc.HandleCallback(c.Context(), state, code)
+	_, platform, err := h.svc.HandleCallback(c.Context(), state, code)
 	if err != nil {
 		return response.BadRequest(c, "gmail connect failed: "+err.Error())
 	}
 
-	// Redirect to the frontend's settings page.
+	if platform == "mobile" {
+		// Deep-link the mobile app back to the foreground with success signal.
+		return c.Redirect("atmos://gmail/connected", fiber.StatusFound)
+	}
 	return c.Redirect("/", fiber.StatusFound)
 }
 
