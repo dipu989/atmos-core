@@ -628,7 +628,7 @@ func (s *ActivityService) DeleteActivity(ctx context.Context, id, userID uuid.UU
 	return nil
 }
 
-func (s *ActivityService) ListActivities(ctx context.Context, userID uuid.UUID, from, to time.Time, limit, offset int) ([]actdomain.Activity, int64, error) {
+func (s *ActivityService) ListActivities(ctx context.Context, userID uuid.UUID, from, to *time.Time, limit, offset int) ([]actdomain.Activity, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}

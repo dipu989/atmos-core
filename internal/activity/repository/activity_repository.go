@@ -32,22 +32,29 @@ func (r *ActivityRepository) FindByID(ctx context.Context, id, userID uuid.UUID)
 	return &a, nil
 }
 
-func (r *ActivityRepository) ListByUser(ctx context.Context, userID uuid.UUID, from, to time.Time, limit, offset int) ([]domain.Activity, error) {
+func (r *ActivityRepository) ListByUser(ctx context.Context, userID uuid.UUID, from, to *time.Time, limit, offset int) ([]domain.Activity, error) {
 	var activities []domain.Activity
-	q := r.db.WithContext(ctx).
-		Where("user_id = ? AND date_local BETWEEN ? AND ?", userID, from, to).
-		Order("started_at DESC").
-		Limit(limit).
-		Offset(offset)
+	q := r.db.WithContext(ctx).Where("user_id = ?", userID)
+	if from != nil {
+		q = q.Where("date_local >= ?", *from)
+	}
+	if to != nil {
+		q = q.Where("date_local <= ?", *to)
+	}
+	q = q.Order("started_at DESC").Limit(limit).Offset(offset)
 	return activities, q.Find(&activities).Error
 }
 
-func (r *ActivityRepository) CountByUser(ctx context.Context, userID uuid.UUID, from, to time.Time) (int64, error) {
+func (r *ActivityRepository) CountByUser(ctx context.Context, userID uuid.UUID, from, to *time.Time) (int64, error) {
 	var count int64
-	err := r.db.WithContext(ctx).Model(&domain.Activity{}).
-		Where("user_id = ? AND date_local BETWEEN ? AND ?", userID, from, to).
-		Count(&count).Error
-	return count, err
+	q := r.db.WithContext(ctx).Model(&domain.Activity{}).Where("user_id = ?", userID)
+	if from != nil {
+		q = q.Where("date_local >= ?", *from)
+	}
+	if to != nil {
+		q = q.Where("date_local <= ?", *to)
+	}
+	return count, q.Count(&count).Error
 }
 
 func (r *ActivityRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.ActivityStatus, reason *string) error {

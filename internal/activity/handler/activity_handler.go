@@ -106,7 +106,7 @@ func (h *ActivityHandler) GetActivity(c *fiber.Ctx) error {
 // ListActivities godoc
 // @Summary     List activities
 // @Description Returns a paginated list of activities for the authenticated user.
-// @Description Defaults to the last 30 days when from/to are omitted.
+// @Description Returns all activities when from/to are omitted.
 // @Tags        activities
 // @Produce     json
 // @Security    BearerAuth
@@ -120,17 +120,16 @@ func (h *ActivityHandler) GetActivity(c *fiber.Ctx) error {
 func (h *ActivityHandler) ListActivities(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 
-	from := time.Now().AddDate(0, 0, -30)
-	to := time.Now()
+	var from, to *time.Time
 
 	if fromStr := c.Query("from"); fromStr != "" {
 		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
-			from = t
+			from = &t
 		}
 	}
 	if toStr := c.Query("to"); toStr != "" {
 		if t, err := time.Parse("2006-01-02", toStr); err == nil {
-			to = t
+			to = &t
 		}
 	}
 
