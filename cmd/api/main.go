@@ -30,6 +30,9 @@ import (
 	acthandler "github.com/dipu/atmos-core/internal/activity/handler"
 	actrepo "github.com/dipu/atmos-core/internal/activity/repository"
 	actservice "github.com/dipu/atmos-core/internal/activity/service"
+	apikeyhandler "github.com/dipu/atmos-core/internal/apikey/handler"
+	apikeyrepo "github.com/dipu/atmos-core/internal/apikey/repository"
+	apikeyservice "github.com/dipu/atmos-core/internal/apikey/service"
 	authhandler "github.com/dipu/atmos-core/internal/auth/handler"
 	authrepo "github.com/dipu/atmos-core/internal/auth/repository"
 	authservice "github.com/dipu/atmos-core/internal/auth/service"
@@ -105,6 +108,7 @@ func main() {
 	}
 
 	// --- Repositories ---
+	apiKeyRepo := apikeyrepo.NewAPIKeyRepository(db)
 	userRepo := idrepo.NewUserRepository(db)
 	tokenRepo := authrepo.NewTokenRepository(db)
 	resetRepo := authrepo.NewPasswordResetRepository(db)
@@ -170,6 +174,7 @@ func main() {
 	// --- Handlers ---
 	authH := authhandler.NewAuthHandler(authSvc, cfg.App.FrontendURL)
 	identityH := idhandler.NewIdentityHandler(identitySvc)
+	apiKeyH := apikeyhandler.NewAPIKeyHandler(apikeyservice.NewAPIKeyService(apiKeyRepo))
 	deviceH := devhandler.NewDeviceHandler(deviceSvc)
 	activityH := acthandler.NewActivityHandler(activitySvc)
 	timelineH := timelinehandler.NewTimelineHandler(timelineSvc)
@@ -220,7 +225,7 @@ func main() {
 	auth.Post("/reset-password", authH.ResetPassword)
 
 	// Protected
-	protected := api.Use(middleware.RequireAuth(jwtManager))
+	protected := api.Use(middleware.RequireAuth(jwtManager, apiKeyRepo))
 
 	protected.Post("/auth/resend-verification", authH.ResendVerification)
 
@@ -229,6 +234,10 @@ func main() {
 	protected.Delete("/users/me", identityH.DeleteAccount)
 	protected.Get("/users/me/preferences", identityH.GetPreferences)
 	protected.Put("/users/me/preferences", identityH.UpdatePreferences)
+
+	protected.Post("/users/me/api-keys", apiKeyH.Create)
+	protected.Get("/users/me/api-keys", apiKeyH.List)
+	protected.Delete("/users/me/api-keys/:id", apiKeyH.Revoke)
 
 	protected.Post("/devices/register", deviceH.Register)
 	protected.Get("/devices", deviceH.List)
