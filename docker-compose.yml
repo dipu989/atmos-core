@@ -5,6 +5,8 @@ services:
     env_file: .env
     ports:
       - "8080:8080"
+    volumes:
+      - /home/ubuntu/atmos-firebase.json:/secrets/atmos-firebase.json:ro
     restart: unless-stopped
 
   worker:
@@ -12,4 +14,6 @@ services:
     container_name: atmos-worker
     env_file: .env
     command: ./worker
+    volumes:
+      - /home/ubuntu/atmos-firebase.json:/secrets/atmos-firebase.json:ro
     restart: unless-stopped
