@@ -138,15 +138,15 @@ func (s *GmailService) HandleCallback(ctx context.Context, state, code string) (
 	}
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		return nil, "", fmt.Errorf("invalid user id in state: %w", err)
+		return nil, platform, fmt.Errorf("invalid user id in state: %w", err)
 	}
 	token, err := s.oauthCfg.Exchange(ctx, code)
 	if err != nil {
-		return nil, "", fmt.Errorf("token exchange: %w", err)
+		return nil, platform, fmt.Errorf("token exchange: %w", err)
 	}
 	email, err := s.fetchGmailEmail(ctx, token)
 	if err != nil {
-		return nil, "", fmt.Errorf("fetch gmail profile: %w", err)
+		return nil, platform, fmt.Errorf("fetch gmail profile: %w", err)
 	}
 	now := time.Now().UTC()
 	conn := &domain.GmailConnection{
@@ -160,7 +160,7 @@ func (s *GmailService) HandleCallback(ctx context.Context, state, code string) (
 		UpdatedAt:    now,
 	}
 	if err := s.connRepo.Upsert(ctx, conn); err != nil {
-		return nil, "", fmt.Errorf("save gmail connection: %w", err)
+		return nil, platform, fmt.Errorf("save gmail connection: %w", err)
 	}
 	return conn, platform, nil
 }

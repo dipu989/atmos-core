@@ -55,6 +55,11 @@ func (h *GmailHandler) Connect(c *fiber.Ctx) error {
 func (h *GmailHandler) AuthURL(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 	platform := c.Query("platform") // "mobile" or ""
+	// Only "mobile" is a valid non-empty platform value; reject anything else so a
+	// misconfigured client doesn't silently receive a web redirect after OAuth.
+	if platform != "" && platform != "mobile" {
+		return response.BadRequest(c, `invalid platform: use "mobile" or omit`)
+	}
 	url := h.svc.AuthURLForPlatform(userID, platform)
 	if url == "" {
 		return response.InternalError(c, "gmail OAuth not configured")
@@ -69,6 +74,8 @@ func (h *GmailHandler) AuthURL(c *fiber.Ctx) error {
 //	Google redirects here after the user grants permission.
 //	On success, redirects to atmos://gmail/connected for mobile flows,
 //	or to the frontend's settings page for web flows.
+//	On error, redirects to atmos://gmail/error for mobile flows so the
+//	app can return to the foreground and surface the failure gracefully.
 //
 // @Tags        gmail
 // @Param       state query string true "OAuth state"
@@ -85,6 +92,11 @@ func (h *GmailHandler) Callback(c *fiber.Ctx) error {
 
 	_, platform, err := h.svc.HandleCallback(c.Context(), state, code)
 	if err != nil {
+		if platform == "mobile" {
+			// Redirect the mobile app back to the foreground with an error signal so
+			// the user is not left stranded on a JSON error page in the browser.
+			return c.Redirect("atmos://gmail/error", fiber.StatusFound)
+		}
 		return response.BadRequest(c, "gmail connect failed: "+err.Error())
 	}
 
