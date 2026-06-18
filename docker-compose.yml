@@ -6,3 +6,10 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+
+  worker:
+    image: 844486820561.dkr.ecr.ap-south-1.amazonaws.com/atmos-core:latest
+    container_name: atmos-worker
+    env_file: .env
+    command: ./worker
+    restart: unless-stopped
