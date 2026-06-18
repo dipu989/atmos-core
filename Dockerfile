@@ -22,6 +22,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -o /app/bin/seed ./cmd/seed
 
+# Build the worker binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-s -w" -o /app/bin/worker ./cmd/worker
+
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM alpine:3.21
 
@@ -33,6 +37,7 @@ WORKDIR /app
 COPY --from=builder /app/bin/api     ./api
 COPY --from=builder /app/bin/migrate ./migrate
 COPY --from=builder /app/bin/seed    ./seed
+COPY --from=builder /app/bin/worker  ./worker
 
 # Copy migrations directory (needed by migrate binary at runtime)
 COPY --from=builder /app/migrations ./migrations
