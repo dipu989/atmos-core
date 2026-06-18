@@ -107,37 +107,46 @@ func NewGmailService(
 
 // ── OAuth connect / disconnect ────────────────────────────────────────────────
 
-// AuthURL generates the Google consent-page URL.
+// AuthURL generates the Google consent-page URL for web flows.
 // Returns an empty string if Google OAuth is not configured (missing ClientID).
 // The userID is embedded in a signed state parameter — no session cookie needed.
 func (s *GmailService) AuthURL(userID uuid.UUID) string {
+	return s.AuthURLForPlatform(userID, "")
+}
+
+// AuthURLForPlatform generates the consent-page URL, embedding [platform] in the
+// signed state so the callback can redirect back appropriately.
+// Use platform="mobile" for in-app browser flows; leave empty for web.
+func (s *GmailService) AuthURLForPlatform(userID uuid.UUID, platform string) string {
 	if s.oauthCfg.ClientID == "" {
 		return ""
 	}
 	return s.oauthCfg.AuthCodeURL(
-		s.signState(userID.String()),
+		s.signState(userID.String(), platform),
 		oauth2.AccessTypeOffline,
 		oauth2.ApprovalForce,
 	)
 }
 
 // HandleCallback exchanges the OAuth code for tokens and persists the connection.
-func (s *GmailService) HandleCallback(ctx context.Context, state, code string) (*domain.GmailConnection, error) {
-	userIDStr, err := s.verifyState(state)
+// Returns the connection and the originating platform ("mobile" or "") so the
+// caller can choose the appropriate post-auth redirect destination.
+func (s *GmailService) HandleCallback(ctx context.Context, state, code string) (*domain.GmailConnection, string, error) {
+	userIDStr, platform, err := s.verifyState(state)
 	if err != nil {
-		return nil, fmt.Errorf("invalid oauth state: %w", err)
+		return nil, "", fmt.Errorf("invalid oauth state: %w", err)
 	}
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid user id in state: %w", err)
+		return nil, platform, fmt.Errorf("invalid user id in state: %w", err)
 	}
 	token, err := s.oauthCfg.Exchange(ctx, code)
 	if err != nil {
-		return nil, fmt.Errorf("token exchange: %w", err)
+		return nil, platform, fmt.Errorf("token exchange: %w", err)
 	}
 	email, err := s.fetchGmailEmail(ctx, token)
 	if err != nil {
-		return nil, fmt.Errorf("fetch gmail profile: %w", err)
+		return nil, platform, fmt.Errorf("fetch gmail profile: %w", err)
 	}
 	now := time.Now().UTC()
 	conn := &domain.GmailConnection{
@@ -151,9 +160,9 @@ func (s *GmailService) HandleCallback(ctx context.Context, state, code string) (
 		UpdatedAt:    now,
 	}
 	if err := s.connRepo.Upsert(ctx, conn); err != nil {
-		return nil, fmt.Errorf("save gmail connection: %w", err)
+		return nil, platform, fmt.Errorf("save gmail connection: %w", err)
 	}
-	return conn, nil
+	return conn, platform, nil
 }
 
 // Disconnect removes the stored Gmail tokens for a user.
@@ -794,35 +803,39 @@ func (s *GmailService) fetchGmailEmail(ctx context.Context, token *oauth2.Token)
 type statePayload struct {
 	UserID   string `json:"u"`
 	IssuedAt int64  `json:"t"`
+	// Platform is "mobile" when the flow originates from the mobile app.
+	// Empty / absent means web.
+	Platform string `json:"p,omitempty"`
 }
 
-func (s *GmailService) signState(userID string) string {
-	p := statePayload{UserID: userID, IssuedAt: time.Now().Unix()}
+func (s *GmailService) signState(userID, platform string) string {
+	p := statePayload{UserID: userID, IssuedAt: time.Now().Unix(), Platform: platform}
 	b, _ := json.Marshal(p)
 	enc := base64.RawURLEncoding.EncodeToString(b)
 	return enc + "." + s.hmacSign(enc)
 }
 
-func (s *GmailService) verifyState(state string) (string, error) {
+// verifyState returns (userID, platform, error).
+func (s *GmailService) verifyState(state string) (string, string, error) {
 	parts := strings.SplitN(state, ".", 2)
 	if len(parts) != 2 {
-		return "", errors.New("malformed state")
+		return "", "", errors.New("malformed state")
 	}
 	if !hmac.Equal([]byte(s.hmacSign(parts[0])), []byte(parts[1])) {
-		return "", errors.New("state signature invalid")
+		return "", "", errors.New("state signature invalid")
 	}
 	b, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var p statePayload
 	if err := json.Unmarshal(b, &p); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if time.Since(time.Unix(p.IssuedAt, 0)) > 10*time.Minute {
-		return "", errors.New("state expired")
+		return "", "", errors.New("state expired")
 	}
-	return p.UserID, nil
+	return p.UserID, p.Platform, nil
 }
 
 func (s *GmailService) hmacSign(data string) string {
