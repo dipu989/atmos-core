@@ -117,6 +117,34 @@ func (r *ActivityRepository) ExistsByReceiptID(ctx context.Context, receiptID st
 	return count > 0, err
 }
 
+func (r *ActivityRepository) FindByReceiptID(ctx context.Context, receiptID string) (*domain.Activity, error) {
+	var a domain.Activity
+	err := r.db.WithContext(ctx).Where("receipt_id = ?", receiptID).First(&a).Error
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// BackfillRouteLabels sets origin and destination on an activity only when they
+// are currently NULL. Used to enrich existing rows on a re-sync without
+// overwriting data that was already set.
+func (r *ActivityRepository) BackfillRouteLabels(ctx context.Context, id uuid.UUID, origin, destination string) error {
+	updates := map[string]any{}
+	if origin != "" {
+		updates["origin"] = origin
+	}
+	if destination != "" {
+		updates["destination"] = destination
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&domain.Activity{}).
+		Where("id = ? AND origin IS NULL AND destination IS NULL", id).
+		Updates(updates).Error
+}
+
 // FindCandidatesInWindow returns activities for a user that overlap a given time window.
 // Used by the TripMatcher to find dedup candidates. The window is expanded by bufferMinutes
 // on each side to account for GPS start-time jitter.

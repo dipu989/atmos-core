@@ -124,11 +124,23 @@ const dedupCandidateWindow = 15 // minutes
 func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput) (*actdomain.Activity, bool, error) {
 	// Layer 1: receipt_id idempotency (faster check before the window query).
 	if input.ReceiptID != nil {
-		exists, err := s.repo.ExistsByReceiptID(ctx, *input.ReceiptID)
-		if err != nil {
+		existing, err := s.repo.FindByReceiptID(ctx, *input.ReceiptID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, false, err
 		}
-		if exists {
+		if existing != nil {
+			// Backfill origin/destination when the existing row is missing them
+			// (e.g. re-sync after the snippet-enrichment fix was deployed).
+			if existing.Origin == nil && existing.Destination == nil {
+				origin, destination := "", ""
+				if input.Origin != nil {
+					origin = *input.Origin
+				}
+				if input.Destination != nil {
+					destination = *input.Destination
+				}
+				_ = s.repo.BackfillRouteLabels(ctx, existing.ID, origin, destination)
+			}
 			return nil, false, ErrDuplicate
 		}
 	}
