@@ -30,6 +30,7 @@ import (
 	"github.com/dipu/atmos-core/platform/eventbus"
 	"github.com/dipu/atmos-core/platform/logger"
 	"github.com/dipu/atmos-core/platform/push"
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 )
@@ -75,7 +76,14 @@ func main() {
 	// --- Services ---
 	identitySvc := idservice.NewIdentityService(userRepo, tokenRepo)
 	activitySvc := actservice.NewActivityService(activityRepo, bus)
-	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus)
+	regionFn := func(ctx context.Context, userID uuid.UUID) string {
+		prefs, err := userRepo.GetPreferences(ctx, userID)
+		if err != nil || prefs.Region == "" {
+			return "IN"
+		}
+		return prefs.Region
+	}
+	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus, regionFn)
 	agg := timelineagg.NewAggregator(summaryRepo)
 	timelineSvc := timelineservice.NewTimelineService(summaryRepo, agg)
 	insightSvc := insightservice.NewInsightService(insightRepo, summaryRepo, bus)

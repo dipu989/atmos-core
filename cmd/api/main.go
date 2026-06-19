@@ -68,6 +68,7 @@ import (
 	"github.com/dipu/atmos-core/platform/response"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/google/uuid"
 	fiberSwagger "github.com/swaggo/fiber-swagger"
 	"go.uber.org/zap"
 )
@@ -145,7 +146,14 @@ func main() {
 	identitySvc := idservice.NewIdentityService(userRepo, tokenRepo)
 	deviceSvc := devservice.NewDeviceService(deviceRepo)
 	activitySvc := actservice.NewActivityService(activityRepo, bus)
-	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus)
+	regionFn := func(ctx context.Context, userID uuid.UUID) string {
+		prefs, err := userRepo.GetPreferences(ctx, userID)
+		if err != nil || prefs.Region == "" {
+			return "IN"
+		}
+		return prefs.Region
+	}
+	emissionSvc := emiservice.NewEmissionService(emissionRepo, activityRepo, bus, regionFn)
 	agg := timelineagg.NewAggregator(summaryRepo)
 	timelineSvc := timelineservice.NewTimelineService(summaryRepo, agg)
 	insightSvc := insightservice.NewInsightService(insightRepo, summaryRepo, bus)

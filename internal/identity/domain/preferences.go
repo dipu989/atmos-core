@@ -21,6 +21,7 @@ type UserPreferences struct {
 	WorkLat                  *float64  `gorm:"column:work_lat"                json:"work_lat,omitempty"`
 	WorkLng                  *float64  `gorm:"column:work_lng"                json:"work_lng,omitempty"`
 	DefaultTransport         *string   `gorm:"column:default_transport"       json:"default_transport,omitempty"`
+	Region                   string    `gorm:"not null;default:'IN'"          json:"region"`
 	CreatedAt                time.Time `json:"created_at"`
 	UpdatedAt                time.Time `json:"updated_at"`
 }

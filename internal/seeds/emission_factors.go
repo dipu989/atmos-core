@@ -63,6 +63,10 @@ func (s *EmissionFactorsSeeder) Run(ctx context.Context, db *gorm.DB) error {
 		{ID: uuid.New(), ActivityType: "transport", TransportMode: ptr("train"), Region: "IN", KgCO2ePerKM: flt(0.050), SourceName: "Atmos_2024", EffectiveFrom: canonicalFrom},
 		{ID: uuid.New(), ActivityType: "transport", TransportMode: ptr("car"), Region: "IN", KgCO2ePerKM: flt(0.190), SourceName: "Atmos_2024", EffectiveFrom: canonicalFrom},
 		{ID: uuid.New(), ActivityType: "transport", TransportMode: ptr("cab"), Region: "IN", KgCO2ePerKM: flt(0.210), SourceName: "Atmos_2024", EffectiveFrom: canonicalFrom},
+		// auto_rickshaw and two_wheeler canonical — weighted average of fuel-specific 2023 rows,
+		// used as fallback when fuel type is unknown.
+		{ID: uuid.New(), ActivityType: "transport", TransportMode: ptr("auto_rickshaw"), Region: "IN", KgCO2ePerKM: flt(0.078), SourceName: "Atmos_2024", EffectiveFrom: canonicalFrom},
+		{ID: uuid.New(), ActivityType: "transport", TransportMode: ptr("two_wheeler"), Region: "IN", KgCO2ePerKM: flt(0.100), SourceName: "Atmos_2024", EffectiveFrom: canonicalFrom},
 		{ID: uuid.New(), ActivityType: "flight", TransportMode: ptr("flight"), Region: "global", KgCO2ePerKM: flt(0.255), SourceName: "Atmos_2024", EffectiveFrom: canonicalFrom},
 	}
 

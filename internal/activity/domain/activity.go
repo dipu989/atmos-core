@@ -56,6 +56,7 @@ type Activity struct {
 	ActivityType    ActivityType   `gorm:"not null"                   json:"activity_type"`
 	TransportMode   *TransportMode `json:"transport_mode,omitempty"`
 	DistanceKM      *float64       `gorm:"type:numeric(10,3)"         json:"distance_km,omitempty"`
+	EnergyKWH       *float64       `gorm:"type:numeric(10,3)"         json:"energy_kwh,omitempty"`
 	DurationMinutes *int           `json:"duration_minutes,omitempty"`
 	Source          ActivitySource `gorm:"not null"                   json:"source"`
 	Provider        *string        `json:"provider,omitempty"`

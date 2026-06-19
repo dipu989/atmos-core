@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -123,17 +124,13 @@ func (h *ActivityHandler) GetActivity(c *fiber.Ctx) error {
 func (h *ActivityHandler) ListActivities(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 
-	var from, to *time.Time
-
-	if fromStr := c.Query("from"); fromStr != "" {
-		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
-			from = &t
-		}
+	from, err := parseDateParam(c, "from")
+	if err != nil {
+		return response.BadRequest(c, err.Error())
 	}
-	if toStr := c.Query("to"); toStr != "" {
-		if t, err := time.Parse("2006-01-02", toStr); err == nil {
-			to = &t
-		}
+	to, err := parseDateParam(c, "to")
+	if err != nil {
+		return response.BadRequest(c, err.Error())
 	}
 
 	limit := c.QueryInt("limit", 50)
@@ -170,16 +167,13 @@ func (h *ActivityHandler) ListActivities(c *fiber.Ctx) error {
 func (h *ActivityHandler) ExportCSV(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 
-	var from, to *time.Time
-	if fromStr := c.Query("from"); fromStr != "" {
-		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
-			from = &t
-		}
+	from, err := parseDateParam(c, "from")
+	if err != nil {
+		return response.BadRequest(c, err.Error())
 	}
-	if toStr := c.Query("to"); toStr != "" {
-		if t, err := time.Parse("2006-01-02", toStr); err == nil {
-			to = &t
-		}
+	to, err := parseDateParam(c, "to")
+	if err != nil {
+		return response.BadRequest(c, err.Error())
 	}
 
 	activities, err := h.svc.ExportActivities(c.Context(), userID, from, to)
@@ -187,15 +181,28 @@ func (h *ActivityHandler) ExportCSV(c *fiber.Ctx) error {
 		return response.InternalError(c, "failed to export activities")
 	}
 
-	c.Set("Content-Type", "text/csv; charset=utf-8")
-	c.Set("Content-Disposition", `attachment; filename="atmos_trips.csv"`)
+	timezone, _ := c.Locals("userTimezone").(string)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		loc = time.UTC
+	}
 
-	w := csv.NewWriter(c.Response().BodyWriter())
-	_ = w.Write([]string{"Date", "Time", "Transport Mode", "Distance (km)", "Duration (min)", "Source", "Origin", "Destination"})
+	// Buffer the full CSV before sending so that any write error can be
+	// reported as a proper HTTP error rather than corrupting an already-started
+	// text/csv response body.
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	if err := w.Write([]string{"Date", "Time", "Transport Mode", "Distance (km)", "Duration (min)", "Source", "Origin", "Destination"}); err != nil {
+		return response.InternalError(c, "failed to write CSV")
+	}
 
 	for _, a := range activities {
-		date := a.DateLocal.Format("2006-01-02")
-		timeStr := a.StartedAt.UTC().Format("15:04")
+		local := a.StartedAt.In(loc)
+		date := local.Format("2006-01-02")
+		timeStr := local.Format("15:04")
 
 		mode := ""
 		if a.TransportMode != nil {
@@ -219,11 +226,19 @@ func (h *ActivityHandler) ExportCSV(c *fiber.Ctx) error {
 			destination = *a.Destination
 		}
 
-		_ = w.Write([]string{date, timeStr, mode, distance, duration, source, origin, destination})
+		if err := w.Write([]string{date, timeStr, mode, distance, duration, source, origin, destination}); err != nil {
+			return response.InternalError(c, "failed to write CSV")
+		}
 	}
 
 	w.Flush()
-	return w.Error()
+	if err := w.Error(); err != nil {
+		return response.InternalError(c, "failed to flush CSV")
+	}
+
+	c.Set("Content-Type", "text/csv; charset=utf-8")
+	c.Set("Content-Disposition", `attachment; filename="atmos_trips.csv"`)
+	return c.Send(buf.Bytes())
 }
 
 // UpdateActivity godoc
@@ -370,4 +385,18 @@ func csvSource(source string) string {
 	default:
 		return source
 	}
+}
+
+// parseDateParam parses a YYYY-MM-DD query parameter. Returns nil when the
+// key is absent, and an error when the value is present but not a valid date.
+func parseDateParam(c *fiber.Ctx, key string) (*time.Time, error) {
+	s := c.Query(key)
+	if s == "" {
+		return nil, nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: must be YYYY-MM-DD", key)
+	}
+	return &t, nil
 }

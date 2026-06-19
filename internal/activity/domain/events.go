@@ -18,6 +18,8 @@ type ActivityIngestedPayload struct {
 	ActivityType  ActivityType
 	TransportMode *TransportMode
 	DistanceKM    *float64
+	EnergyKWH     *float64
+	FuelType      *string
 	StartedAt     time.Time
 	DateLocal     time.Time
 	RawMetadata   RawMetadata

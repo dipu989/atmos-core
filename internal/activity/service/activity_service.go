@@ -32,6 +32,8 @@ type IngestInput struct {
 	ActivityType    actdomain.ActivityType
 	TransportMode   *actdomain.TransportMode
 	DistanceKM      *float64
+	EnergyKWH       *float64
+	FuelType        *string
 	DurationMinutes *int
 	Source          actdomain.ActivitySource
 	Provider        *string
@@ -207,6 +209,8 @@ func (s *ActivityService) IngestWithDedup(ctx context.Context, input IngestInput
 				ActivityType:  enriched.ActivityType,
 				TransportMode: enriched.TransportMode,
 				DistanceKM:    enriched.DistanceKM,
+				EnergyKWH:     enriched.EnergyKWH,
+				FuelType:      input.FuelType,
 				StartedAt:     enriched.StartedAt,
 				DateLocal:     enriched.DateLocal,
 				RawMetadata:   enriched.RawMetadata,
@@ -259,6 +263,7 @@ func (s *ActivityService) createActivity(ctx context.Context, input IngestInput,
 		ActivityType:    input.ActivityType,
 		TransportMode:   input.TransportMode,
 		DistanceKM:      input.DistanceKM,
+		EnergyKWH:       input.EnergyKWH,
 		DurationMinutes: input.DurationMinutes,
 		Source:          input.Source,
 		Provider:        input.Provider,
@@ -290,6 +295,8 @@ func (s *ActivityService) createActivity(ctx context.Context, input IngestInput,
 			ActivityType:  activity.ActivityType,
 			TransportMode: activity.TransportMode,
 			DistanceKM:    activity.DistanceKM,
+			EnergyKWH:     activity.EnergyKWH,
+			FuelType:      input.FuelType,
 			StartedAt:     activity.StartedAt,
 			DateLocal:     activity.DateLocal,
 			RawMetadata:   activity.RawMetadata,
@@ -447,6 +454,8 @@ func (s *ActivityService) tryMergeGPSWithReceipt(ctx context.Context, input Inge
 				ActivityType:  enriched.ActivityType,
 				TransportMode: enriched.TransportMode,
 				DistanceKM:    enriched.DistanceKM,
+				EnergyKWH:     enriched.EnergyKWH,
+				FuelType:      input.FuelType,
 				StartedAt:     enriched.StartedAt,
 				DateLocal:     enriched.DateLocal,
 				RawMetadata:   enriched.RawMetadata,
@@ -501,6 +510,8 @@ func buildGPSEnrichInput(input IngestInput, confidence float64) repository.Enric
 type UpdateInput struct {
 	TransportMode   *actdomain.TransportMode
 	DistanceKM      *float64
+	EnergyKWH       *float64
+	FuelType        *string
 	DurationMinutes *int
 	StartedAt       *time.Time
 	UserTimezone    string
@@ -513,7 +524,7 @@ type UpdateInput struct {
 func (s *ActivityService) UpdateActivity(ctx context.Context, id, userID uuid.UUID, input UpdateInput) (*actdomain.Activity, error) {
 	// Fast path: nothing to do.
 	if input.TransportMode == nil && input.DistanceKM == nil &&
-		input.DurationMinutes == nil && input.StartedAt == nil {
+		input.EnergyKWH == nil && input.DurationMinutes == nil && input.StartedAt == nil {
 		activity, err := s.repo.FindByID(ctx, id, userID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -547,6 +558,9 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, id, userID uuid.UU
 	if input.DistanceKM != nil {
 		activity.DistanceKM = input.DistanceKM
 	}
+	if input.EnergyKWH != nil {
+		activity.EnergyKWH = input.EnergyKWH
+	}
 	if input.DurationMinutes != nil {
 		activity.DurationMinutes = input.DurationMinutes
 	}
@@ -573,6 +587,8 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, id, userID uuid.UU
 			ActivityType:  activity.ActivityType,
 			TransportMode: activity.TransportMode,
 			DistanceKM:    activity.DistanceKM,
+			EnergyKWH:     activity.EnergyKWH,
+			FuelType:      input.FuelType,
 			StartedAt:     activity.StartedAt,
 			DateLocal:     activity.DateLocal,
 			RawMetadata:   activity.RawMetadata,
@@ -640,9 +656,12 @@ func (s *ActivityService) ListActivities(ctx context.Context, userID uuid.UUID, 
 	return activities, total, err
 }
 
-// ExportActivities returns up to 5000 activities for CSV export.
+// ExportRowCap is the maximum number of rows returned by ExportActivities.
+const ExportRowCap = 5000
+
+// ExportActivities returns up to ExportRowCap activities for CSV export.
 func (s *ActivityService) ExportActivities(ctx context.Context, userID uuid.UUID, from, to *time.Time) ([]actdomain.Activity, error) {
-	return s.repo.ListAllByUser(ctx, userID, from, to, 5000)
+	return s.repo.ListAllByUser(ctx, userID, from, to, ExportRowCap)
 }
 
 func localDate(t time.Time, timezone string) time.Time {
