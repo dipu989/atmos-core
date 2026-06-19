@@ -45,6 +45,21 @@ func (r *ActivityRepository) ListByUser(ctx context.Context, userID uuid.UUID, f
 	return activities, q.Find(&activities).Error
 }
 
+// ListAllByUser fetches up to cap activities for a user, optionally filtered by date range.
+// Used for CSV export; bypasses the pagination limit in ListByUser.
+func (r *ActivityRepository) ListAllByUser(ctx context.Context, userID uuid.UUID, from, to *time.Time, cap int) ([]domain.Activity, error) {
+	var activities []domain.Activity
+	q := r.db.WithContext(ctx).Where("user_id = ?", userID)
+	if from != nil {
+		q = q.Where("date_local >= ?", *from)
+	}
+	if to != nil {
+		q = q.Where("date_local <= ?", *to)
+	}
+	q = q.Order("started_at DESC").Limit(cap)
+	return activities, q.Find(&activities).Error
+}
+
 func (r *ActivityRepository) CountByUser(ctx context.Context, userID uuid.UUID, from, to *time.Time) (int64, error) {
 	var count int64
 	q := r.db.WithContext(ctx).Model(&domain.Activity{}).Where("user_id = ?", userID)

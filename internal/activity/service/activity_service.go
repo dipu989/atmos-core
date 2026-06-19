@@ -640,6 +640,11 @@ func (s *ActivityService) ListActivities(ctx context.Context, userID uuid.UUID, 
 	return activities, total, err
 }
 
+// ExportActivities returns up to 5000 activities for CSV export.
+func (s *ActivityService) ExportActivities(ctx context.Context, userID uuid.UUID, from, to *time.Time) ([]actdomain.Activity, error) {
+	return s.repo.ListAllByUser(ctx, userID, from, to, 5000)
+}
+
 func localDate(t time.Time, timezone string) time.Time {
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {

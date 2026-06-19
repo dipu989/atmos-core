@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"encoding/csv"
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
@@ -152,6 +155,77 @@ func (h *ActivityHandler) ListActivities(c *fiber.Ctx) error {
 	})
 }
 
+// ExportCSV godoc
+// @Summary     Export activities as CSV
+// @Description Returns all activities for the authenticated user as a downloadable CSV file.
+// @Description Optional from/to query params filter by date_local (YYYY-MM-DD). Capped at 5000 rows.
+// @Tags        activities
+// @Produce     text/csv
+// @Security    BearerAuth
+// @Param       from query string false "Start date (YYYY-MM-DD)"
+// @Param       to   query string false "End date (YYYY-MM-DD)"
+// @Success     200  {string} string "CSV file attachment"
+// @Failure     500  {object} map[string]interface{}
+// @Router      /activities/export [get]
+func (h *ActivityHandler) ExportCSV(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+
+	var from, to *time.Time
+	if fromStr := c.Query("from"); fromStr != "" {
+		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
+			from = &t
+		}
+	}
+	if toStr := c.Query("to"); toStr != "" {
+		if t, err := time.Parse("2006-01-02", toStr); err == nil {
+			to = &t
+		}
+	}
+
+	activities, err := h.svc.ExportActivities(c.Context(), userID, from, to)
+	if err != nil {
+		return response.InternalError(c, "failed to export activities")
+	}
+
+	c.Set("Content-Type", "text/csv; charset=utf-8")
+	c.Set("Content-Disposition", `attachment; filename="atmos_trips.csv"`)
+
+	w := csv.NewWriter(c.Response().BodyWriter())
+	_ = w.Write([]string{"Date", "Time", "Transport Mode", "Distance (km)", "Duration (min)", "Source", "Origin", "Destination"})
+
+	for _, a := range activities {
+		date := a.DateLocal.Format("2006-01-02")
+		timeStr := a.StartedAt.UTC().Format("15:04")
+
+		mode := ""
+		if a.TransportMode != nil {
+			mode = csvTransportMode(string(*a.TransportMode))
+		}
+		distance := ""
+		if a.DistanceKM != nil {
+			distance = fmt.Sprintf("%.2f", *a.DistanceKM)
+		}
+		duration := ""
+		if a.DurationMinutes != nil {
+			duration = strconv.Itoa(*a.DurationMinutes)
+		}
+		source := csvSource(string(a.Source))
+		origin := ""
+		if a.Origin != nil {
+			origin = *a.Origin
+		}
+		destination := ""
+		if a.Destination != nil {
+			destination = *a.Destination
+		}
+
+		_ = w.Write([]string{date, timeStr, mode, distance, duration, source, origin, destination})
+	}
+
+	w.Flush()
+	return w.Error()
+}
+
 // UpdateActivity godoc
 // @Summary     Update an activity
 // @Description Partially updates an activity. Only transport_mode, distance_km,
@@ -244,4 +318,56 @@ func modeToActivityType(mode string) actdomain.ActivityType {
 		return actdomain.ActivityFlight
 	}
 	return actdomain.ActivityTransport
+}
+
+func csvTransportMode(mode string) string {
+	switch mode {
+	case "car":
+		return "Car"
+	case "cab":
+		return "Cab"
+	case "auto_rickshaw":
+		return "Auto-rickshaw"
+	case "bus":
+		return "Bus"
+	case "metro":
+		return "Metro"
+	case "train":
+		return "Train"
+	case "two_wheeler":
+		return "Two-wheeler"
+	case "walk", "walking":
+		return "Walking"
+	case "bicycle", "cycling":
+		return "Cycling"
+	case "flight":
+		return "Flight"
+	default:
+		return mode
+	}
+}
+
+func csvSource(source string) string {
+	switch source {
+	case "manual":
+		return "Manual"
+	case "gps":
+		return "GPS"
+	case "gps+receipt":
+		return "GPS + Receipt"
+	case "uber":
+		return "Uber"
+	case "ola":
+		return "Ola"
+	case "rapido":
+		return "Rapido"
+	case "namma_yatri":
+		return "Namma Yatri"
+	case "gmail":
+		return "Gmail"
+	case "health_kit":
+		return "Health Kit"
+	default:
+		return source
+	}
 }
