@@ -487,11 +487,16 @@ func (s *GmailService) handleMessage(
 	routingMap repository.RoutingMap,
 ) msgOutcome {
 	// ── Layer 1 dedup: skip if already in email_ingestion_logs ───────────────
-	processed, err := s.logRepo.IsProcessed(ctx, userID, messageID)
+	existingLog, err := s.logRepo.FindByMessageID(ctx, userID, messageID)
 	if err != nil {
 		logger.L().Warn("gmail: idempotency check failed", zap.Error(err))
 	}
-	if processed {
+	if existingLog != nil {
+		// Already processed — but opportunistically backfill origin/destination
+		// when the activity is missing them (e.g. after the snippet-parse fix).
+		if existingLog.ActivityID != nil {
+			s.tryBackfillAddresses(ctx, gmailSvc, userID, messageID, *existingLog.ActivityID, routingMap)
+		}
 		return msgOutcome{messageID: messageID} // nil log = already done
 	}
 
@@ -721,6 +726,51 @@ func (s *GmailService) ingestRide(
 	logEntry := s.newLog(userID, messageID, &resolvedCode, subject, snippet, domain.StatusParsed)
 	logEntry.ActivityID = &activity.ID
 	return msgOutcome{messageID: messageID, log: logEntry, counted: true}
+}
+
+// tryBackfillAddresses fetches and re-parses a previously ingested email to
+// populate origin/destination on its activity when those fields are NULL.
+// Errors are silently logged — this is best-effort enrichment only.
+func (s *GmailService) tryBackfillAddresses(
+	ctx context.Context,
+	gmailSvc *googleapi.Service,
+	userID uuid.UUID,
+	messageID string,
+	activityID uuid.UUID,
+	routingMap repository.RoutingMap,
+) {
+	msg, err := gmailSvc.Users.Messages.Get("me", messageID).Format("full").Context(ctx).Do()
+	if err != nil {
+		logger.L().Warn("gmail: backfill fetch failed", zap.String("msg_id", messageID), zap.Error(err))
+		return
+	}
+
+	fromRaw, subject, _ := extractHeaders(msg)
+	from := extractEmailAddress(fromRaw)
+	candidates := filterBySubject(routingMap[strings.ToLower(from)], subject)
+	if len(candidates) == 0 {
+		return
+	}
+
+	body := extractBody(msg)
+	for _, candidate := range candidates {
+		p, ok := s.registry.Get(candidate.Code)
+		if !ok {
+			continue
+		}
+		ride, err := p.Parse(subject, body)
+		if err != nil {
+			continue
+		}
+		if ride.PickupAddress == "" && ride.DropAddress == "" {
+			return
+		}
+		if err := s.activitySvc.BackfillRouteLabels(ctx, activityID, ride.PickupAddress, ride.DropAddress); err != nil {
+			logger.L().Warn("gmail: backfill route labels failed",
+				zap.String("activity_id", activityID.String()), zap.Error(err))
+		}
+		return
+	}
 }
 
 // ── Outcome helpers ───────────────────────────────────────────────────────────

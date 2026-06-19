@@ -105,6 +105,10 @@ func (s *ActivityService) GetActivity(ctx context.Context, id, userID uuid.UUID)
 	return s.repo.FindByID(ctx, id, userID)
 }
 
+func (s *ActivityService) BackfillRouteLabels(ctx context.Context, id uuid.UUID, origin, destination string) error {
+	return s.repo.BackfillRouteLabels(ctx, id, origin, destination)
+}
+
 // dedupCandidateWindow is how far on each side of a receipt's time window we
 // search for existing GPS activities. Accounts for GPS waking up late and
 // minor clock drift between providers.
