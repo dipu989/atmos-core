@@ -304,6 +304,22 @@ func (s *GmailService) Logs(ctx context.Context, userID uuid.UUID, limit, offset
 	return s.logRepo.List(ctx, userID, limit, offset)
 }
 
+// ResetSync clears the stored historyId for a user's Gmail connection so the
+// next Sync call performs a full re-scan (up to firstSyncLookback days back)
+// rather than an incremental History API call. Useful after a parser fix to
+// reprocess existing emails and backfill missing fields.
+func (s *GmailService) ResetSync(ctx context.Context, userID uuid.UUID) error {
+	conn, err := s.connRepo.FindByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotConnected
+	}
+	conn.HistoryID = nil
+	return s.connRepo.Save(ctx, conn)
+}
+
 // ── Message listing ───────────────────────────────────────────────────────────
 
 func (s *GmailService) listMessageIDs(
