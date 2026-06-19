@@ -511,37 +511,51 @@ func (s *GmailService) handleMessage(
 		return s.skipOutcome(userID, messageID, nil, subject, snippet)
 	}
 
-	// ── Snippet-first parse ───────────────────────────────────────────────────
-	// Try the snippet before decoding the full body — saves CPU for Uber emails
-	// whose snippets already contain vehicle type + distance + duration.
-	body := "" // lazy — only built if snippet parse fails
+	// ── Full-body decode (done once, shared by both paths) ───────────────────
+	// Extract raw HTML before stripping so we can recover map coords from <a href>
+	// attributes — they are lost after plain-text conversion.
+	rawHTML := extractPart(msg.Payload, "text/html")
+	htmlPickupLat, htmlPickupLng, htmlDropLat, htmlDropLng := parser.ExtractMapCoords(rawHTML)
+	body := extractBody(msg)
+
 	for _, candidate := range candidates {
 		p, ok := s.registry.Get(candidate.Code)
 		if !ok {
 			continue
 		}
 
-		if ride, ok := p.TrySnippet(subject, snippet); ok {
-			// Snippet was enough — no body decoding needed.
+		// Try the snippet first — it is cheap and sufficient for distance/duration.
+		// If it succeeds, still attempt a full-body parse so we can enrich the ride
+		// with pickup/drop addresses and HTML-embedded map coordinates.
+		ride, ok := p.TrySnippet(subject, snippet)
+		if ok {
+			if fullRide, err := p.Parse(subject, body); err == nil {
+				if ride.PickupAddress == "" {
+					ride.PickupAddress = fullRide.PickupAddress
+				}
+				if ride.DropAddress == "" {
+					ride.DropAddress = fullRide.DropAddress
+				}
+				if ride.PickupLat == nil {
+					ride.PickupLat, ride.PickupLng = fullRide.PickupLat, fullRide.PickupLng
+				}
+				if ride.DropLat == nil {
+					ride.DropLat, ride.DropLng = fullRide.DropLat, fullRide.DropLng
+				}
+			}
+			// Merge HTML coords as final fallback.
+			if ride.PickupLat == nil {
+				ride.PickupLat, ride.PickupLng = htmlPickupLat, htmlPickupLng
+			}
+			if ride.DropLat == nil {
+				ride.DropLat, ride.DropLng = htmlDropLat, htmlDropLng
+			}
 			resolved := resolveCode(candidates, ride.ProviderEmailTypeCode, candidate.Code)
 			return s.ingestRide(ctx, userID, messageID, resolved, candidate, dateHeader, subject, snippet, ride)
 		}
-	}
 
-	// ── Full-body parse ───────────────────────────────────────────────────────
-	// Extract raw HTML first so we can scan it for embedded map coordinates
-	// (they exist in <a href> attributes and are lost once HTML is stripped).
-	rawHTML := extractPart(msg.Payload, "text/html")
-	htmlPickupLat, htmlPickupLng, htmlDropLat, htmlDropLng := parser.ExtractMapCoords(rawHTML)
-
-	body = extractBody(msg)
-	for _, candidate := range candidates {
-		p, ok := s.registry.Get(candidate.Code)
-		if !ok {
-			continue
-		}
-
-		ride, err := p.Parse(subject, body)
+		// ── Full-body parse ───────────────────────────────────────────────────
+		fullRide, err := p.Parse(subject, body)
 		if errors.Is(err, parser.ErrCancellation) {
 			return s.skipOutcome(userID, messageID, &candidate.Code, subject, snippet)
 		}
@@ -553,15 +567,15 @@ func (s *GmailService) handleMessage(
 		}
 
 		// Merge HTML-extracted coords into the ride if the parser didn't find any.
-		if ride.PickupLat == nil {
-			ride.PickupLat, ride.PickupLng = htmlPickupLat, htmlPickupLng
+		if fullRide.PickupLat == nil {
+			fullRide.PickupLat, fullRide.PickupLng = htmlPickupLat, htmlPickupLng
 		}
-		if ride.DropLat == nil {
-			ride.DropLat, ride.DropLng = htmlDropLat, htmlDropLng
+		if fullRide.DropLat == nil {
+			fullRide.DropLat, fullRide.DropLng = htmlDropLat, htmlDropLng
 		}
 
-		resolved := resolveCode(candidates, ride.ProviderEmailTypeCode, candidate.Code)
-		return s.ingestRide(ctx, userID, messageID, resolved, candidate, dateHeader, subject, snippet, ride)
+		resolved := resolveCode(candidates, fullRide.ProviderEmailTypeCode, candidate.Code)
+		return s.ingestRide(ctx, userID, messageID, resolved, candidate, dateHeader, subject, snippet, fullRide)
 	}
 
 	// All candidates tried and none succeeded.
