@@ -281,6 +281,7 @@ func main() {
 	protected.Get("/gmail/status", gmailH.Status)
 	protected.Delete("/gmail/disconnect", gmailH.Disconnect)
 	protected.Post("/gmail/sync", gmailH.Sync)
+	protected.Post("/gmail/reset-sync", gmailH.ResetSync)
 	protected.Get("/gmail/logs", gmailH.Logs)
 
 	// --- Internal endpoints (cron-triggered, not user-facing) ---

@@ -174,6 +174,32 @@ func (h *GmailHandler) Sync(c *fiber.Ctx) error {
 	})
 }
 
+// ResetSync godoc
+// @Summary     Reset Gmail sync history
+// @Description Clears the stored Gmail historyId so the next sync re-scans all
+//
+//	emails from the initial lookback window (90 days). Use this after a
+//	parser fix to backfill fields (e.g. origin/destination) that were
+//	missing on earlier syncs.
+//
+// @Tags        gmail
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string]interface{}
+// @Failure     401 {object} map[string]interface{}
+// @Failure     422 {object} map[string]interface{}
+// @Router      /gmail/reset-sync [post]
+func (h *GmailHandler) ResetSync(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	if err := h.svc.ResetSync(c.Context(), userID); err != nil {
+		if errors.Is(err, service.ErrNotConnected) {
+			return response.BadRequest(c, "gmail not connected")
+		}
+		return response.InternalError(c, "could not reset sync history")
+	}
+	return response.OK(c, fiber.Map{"message": "sync history reset — next sync will re-scan all emails"})
+}
+
 // SyncAll godoc
 // @Summary     Trigger Gmail sync for all users
 // @Description Internal endpoint called by the Linux cron job to sync Gmail for every
