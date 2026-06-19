@@ -80,6 +80,9 @@ type Activity struct {
 	MatchConfidence *float64  `gorm:"type:numeric(4,3)"          json:"match_confidence,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	// KgCO2e is populated via a LEFT JOIN with the emissions table on read.
+	// It is not a column on activities and must never be written by GORM.
+	KgCO2e *float64 `gorm:"<-:false;column:kg_co2e" json:"kg_co2e,omitempty"`
 }
 
 func (Activity) TableName() string { return "activities" }

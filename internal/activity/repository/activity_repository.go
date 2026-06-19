@@ -24,7 +24,9 @@ func (r *ActivityRepository) Create(ctx context.Context, activity *domain.Activi
 func (r *ActivityRepository) FindByID(ctx context.Context, id, userID uuid.UUID) (*domain.Activity, error) {
 	var a domain.Activity
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND user_id = ?", id, userID).
+		Joins("LEFT JOIN emissions e ON e.activity_id = activities.id").
+		Select("activities.*, e.kg_co2e").
+		Where("activities.id = ? AND activities.user_id = ?", id, userID).
 		First(&a).Error
 	if err != nil {
 		return nil, err
@@ -34,14 +36,17 @@ func (r *ActivityRepository) FindByID(ctx context.Context, id, userID uuid.UUID)
 
 func (r *ActivityRepository) ListByUser(ctx context.Context, userID uuid.UUID, from, to *time.Time, limit, offset int) ([]domain.Activity, error) {
 	var activities []domain.Activity
-	q := r.db.WithContext(ctx).Where("user_id = ?", userID)
+	q := r.db.WithContext(ctx).
+		Joins("LEFT JOIN emissions e ON e.activity_id = activities.id").
+		Select("activities.*, e.kg_co2e").
+		Where("activities.user_id = ?", userID)
 	if from != nil {
-		q = q.Where("date_local >= ?", *from)
+		q = q.Where("activities.date_local >= ?", *from)
 	}
 	if to != nil {
-		q = q.Where("date_local <= ?", *to)
+		q = q.Where("activities.date_local <= ?", *to)
 	}
-	q = q.Order("started_at DESC").Limit(limit).Offset(offset)
+	q = q.Order("activities.started_at DESC").Limit(limit).Offset(offset)
 	return activities, q.Find(&activities).Error
 }
 
@@ -49,14 +54,17 @@ func (r *ActivityRepository) ListByUser(ctx context.Context, userID uuid.UUID, f
 // Used for CSV export; bypasses the pagination limit in ListByUser.
 func (r *ActivityRepository) ListAllByUser(ctx context.Context, userID uuid.UUID, from, to *time.Time, cap int) ([]domain.Activity, error) {
 	var activities []domain.Activity
-	q := r.db.WithContext(ctx).Where("user_id = ?", userID)
+	q := r.db.WithContext(ctx).
+		Joins("LEFT JOIN emissions e ON e.activity_id = activities.id").
+		Select("activities.*, e.kg_co2e").
+		Where("activities.user_id = ?", userID)
 	if from != nil {
-		q = q.Where("date_local >= ?", *from)
+		q = q.Where("activities.date_local >= ?", *from)
 	}
 	if to != nil {
-		q = q.Where("date_local <= ?", *to)
+		q = q.Where("activities.date_local <= ?", *to)
 	}
-	q = q.Order("started_at DESC").Limit(cap)
+	q = q.Order("activities.started_at DESC").Limit(cap)
 	return activities, q.Find(&activities).Error
 }
 
