@@ -15,21 +15,28 @@ import (
 	"go.uber.org/zap"
 )
 
+// RegionFetcher returns the emission-factor region code for a user (e.g. "IN", "global").
+// Returning "IN" as the fallback keeps existing behaviour for users without preferences.
+type RegionFetcher func(ctx context.Context, userID uuid.UUID) string
+
 type EmissionService struct {
 	emissionRepo *emirepo.EmissionRepository
 	activityRepo *actrepo.ActivityRepository
 	bus          eventbus.Bus
+	regionFn     RegionFetcher
 }
 
 func NewEmissionService(
 	emissionRepo *emirepo.EmissionRepository,
 	activityRepo *actrepo.ActivityRepository,
 	bus eventbus.Bus,
+	regionFn RegionFetcher,
 ) *EmissionService {
 	return &EmissionService{
 		emissionRepo: emissionRepo,
 		activityRepo: activityRepo,
 		bus:          bus,
+		regionFn:     regionFn,
 	}
 }
 
@@ -50,7 +57,8 @@ func (s *EmissionService) HandleActivityIngested(ctx context.Context, event even
 		modeStr = &m
 	}
 
-	factor, err := s.emissionRepo.ResolveFactor(ctx, string(payload.ActivityType), modeStr, "IN", payload.StartedAt)
+	region := s.regionFn(ctx, payload.UserID)
+	factor, err := s.emissionRepo.ResolveFactor(ctx, string(payload.ActivityType), modeStr, payload.FuelType, region, payload.StartedAt)
 	if err != nil {
 		log.Warn("no emission factor found, skipping", zap.Error(err))
 		reason := "no matching emission factor"
@@ -58,7 +66,7 @@ func (s *EmissionService) HandleActivityIngested(ctx context.Context, event even
 		return
 	}
 
-	kgCO2e, err := calculator.Calculate(factor, string(payload.ActivityType), payload.DistanceKM, nil)
+	kgCO2e, err := calculator.Calculate(factor, string(payload.ActivityType), payload.DistanceKM, payload.EnergyKWH)
 	if err != nil {
 		log.Error("emission calculation failed", zap.Error(err))
 		reason := err.Error()

@@ -39,19 +39,32 @@ func (r *EmissionRepository) FindByActivityID(ctx context.Context, activityID uu
 }
 
 // ResolveFactor finds the best-matching emission factor using specificity priority.
-// Order: most specific (all fields match) down to most general (activity_type + global region).
-func (r *EmissionRepository) ResolveFactor(ctx context.Context, activityType string, transportMode *string, region string, on time.Time) (*domain.EmissionFactor, error) {
+// Waterfall: fuel-type-specific candidates first (when fuelType is non-nil),
+// then canonical (no fuel type), falling back through region → global.
+func (r *EmissionRepository) ResolveFactor(ctx context.Context, activityType string, transportMode *string, fuelType *string, region string, on time.Time) (*domain.EmissionFactor, error) {
 	dateStr := on.Format("2006-01-02")
 
-	candidates := []struct {
-		mode   *string
-		region string
-	}{
-		{transportMode, region},
-		{transportMode, "global"},
-		{nil, region},
-		{nil, "global"},
+	type candidate struct {
+		mode     *string
+		fuelType *string
+		region   string
 	}
+
+	var candidates []candidate
+	// When fuel type is known, prefer fuel-specific rows first.
+	if fuelType != nil {
+		candidates = append(candidates,
+			candidate{transportMode, fuelType, region},
+			candidate{transportMode, fuelType, "global"},
+		)
+	}
+	// Canonical (no fuel type) and progressively less specific fallbacks.
+	candidates = append(candidates,
+		candidate{transportMode, nil, region},
+		candidate{transportMode, nil, "global"},
+		candidate{nil, nil, region},
+		candidate{nil, nil, "global"},
+	)
 
 	for _, c := range candidates {
 		query := r.db.WithContext(ctx).
@@ -63,6 +76,11 @@ func (r *EmissionRepository) ResolveFactor(ctx context.Context, activityType str
 			query = query.Where("transport_mode = ?", *c.mode)
 		} else {
 			query = query.Where("transport_mode IS NULL")
+		}
+		if c.fuelType != nil {
+			query = query.Where("fuel_type = ?", *c.fuelType)
+		} else {
+			query = query.Where("fuel_type IS NULL")
 		}
 		query = query.Where("region = ?", c.region)
 
