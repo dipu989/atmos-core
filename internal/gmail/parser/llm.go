@@ -15,28 +15,22 @@ import (
 const llmMaxRetries = 3
 const groqEndpoint = "https://api.groq.com/openai/v1/chat/completions"
 
-var llmSystemPrompt = `You are a ride-receipt email parser. Extract ride information and return ONLY a JSON object with these exact fields:
+var llmSystemPrompt = `You are a ride-receipt email parser. Extract ride data from the email and return ONLY a JSON object.
 
-{
-  "pickup_address": "12 MG Road, Bengaluru",
-  "drop_address": "Indiranagar, Bengaluru",
-  "distance_km": 5.2,
-  "duration_minutes": 18,
-  "fare_amount": 120.0,
-  "currency": "INR",
-  "vehicle_type": "UberGo",
-  "provider": "uber",
-  "transport_mode": "cab",
-  "started_at": "2024-01-15T10:30:00Z"
-}
+Required fields (use JSON null for anything not found in the email — never invent values):
+- pickup_address: full pickup address text extracted from the email, or null
+- drop_address: full drop/destination address text extracted from the email, or null
+- distance_km: trip distance as a number, or null
+- duration_minutes: trip duration as an integer, or null
+- fare_amount: total fare as a number, or null
+- currency: fare currency code (default "INR" for Indian receipts), or null
+- vehicle_type: vehicle category from the email (e.g. UberGo, Auto, Bike), or null
+- provider: ride provider name (e.g. uber, rapido, ola), or null
+- transport_mode: one of "two_wheeler", "cab", "auto_rickshaw" — infer from vehicle type
+- started_at: trip start time in RFC3339 format, or null
 
-Rules:
-- Use JSON null (not the string "null") for any field you cannot find in the email
-- transport_mode must be one of: two_wheeler, cab, auto_rickshaw
-- currency defaults to "INR" for Indian receipts
-- started_at must be RFC3339 format or JSON null
-- If this is NOT a ride receipt email, return exactly: {"not_a_receipt": true}
-- Output ONLY the JSON object. No markdown, no explanation, no extra text.`
+If this is NOT a ride receipt email, return exactly: {"not_a_receipt": true}
+Output ONLY the JSON object. No markdown fences, no explanation, no extra text.`
 
 // LLMParser calls the Groq API to extract ride details from email bodies.
 // It satisfies the Parser interface; TrySnippet always returns false because
