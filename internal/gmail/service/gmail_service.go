@@ -561,17 +561,9 @@ func (s *GmailService) handleMessage(
 	// extract pickup/drop addresses that regex cannot, and handles format
 	// changes in provider emails automatically.
 	if s.llmParser.IsEnabled() {
-		plainText := extractPart(msg.Payload, "text/plain")
-		var llmContent string
-		if plainText != "" {
-			if len(plainText) > 5000 {
-				plainText = plainText[:5000]
-			}
-			llmContent = plainText + "\n\n" + rawHTML
-		} else {
-			llmContent = rawHTML
-		}
-		ride, err := s.llmParser.ParseWithContext(ctx, subject, llmContent)
+		// Use plain text only — raw HTML balloons token usage and hits TPM limits.
+		// body is already text/plain, falling back to stripped HTML when unavailable.
+		ride, err := s.llmParser.ParseWithContext(ctx, subject, body)
 		if err == nil {
 			if ride.PickupLat == nil {
 				ride.PickupLat, ride.PickupLng = htmlPickupLat, htmlPickupLng
