@@ -126,6 +126,16 @@ func (r *ActivityRepository) FindByReceiptID(ctx context.Context, receiptID stri
 	return &a, nil
 }
 
+// HasRouteLabels returns true if the activity already has origin or destination
+// populated. Used as a cheap pre-check before fetching emails for backfill.
+func (r *ActivityRepository) HasRouteLabels(ctx context.Context, id uuid.UUID) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.Activity{}).
+		Where("id = ? AND (origin IS NOT NULL OR destination IS NOT NULL)", id).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // BackfillRouteLabels sets origin and destination on an activity only when they
 // are currently NULL. Used to enrich existing rows on a re-sync without
 // overwriting data that was already set.
