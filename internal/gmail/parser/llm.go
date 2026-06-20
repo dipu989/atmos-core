@@ -15,28 +15,28 @@ import (
 const llmMaxRetries = 3
 const groqEndpoint = "https://api.groq.com/openai/v1/chat/completions"
 
-var llmSystemPrompt = `You are a ride-receipt email parser. Extract ride information from the email and return ONLY a JSON object.
+var llmSystemPrompt = `You are a ride-receipt email parser. Extract ride information and return ONLY a JSON object with these exact fields:
 
-Fields to extract (use null for unknown values):
 {
-  "pickup_address": "full pickup address string or null",
-  "drop_address": "full destination address string or null",
+  "pickup_address": "12 MG Road, Bengaluru",
+  "drop_address": "Indiranagar, Bengaluru",
   "distance_km": 5.2,
   "duration_minutes": 18,
   "fare_amount": 120.0,
   "currency": "INR",
-  "vehicle_type": "Bike|Auto|Cab|UberGo|RapidoBike or null",
-  "provider": "uber|rapido|ola|etc",
-  "transport_mode": "two_wheeler|cab|auto_rickshaw",
-  "started_at": "2024-01-15T10:30:00Z or null"
+  "vehicle_type": "UberGo",
+  "provider": "uber",
+  "transport_mode": "cab",
+  "started_at": "2024-01-15T10:30:00Z"
 }
 
 Rules:
+- Use JSON null (not the string "null") for any field you cannot find in the email
 - transport_mode must be one of: two_wheeler, cab, auto_rickshaw
 - currency defaults to "INR" for Indian receipts
-- started_at must be RFC3339 format or null
-- If this is NOT a ride receipt, return: {"not_a_receipt": true}
-- Output ONLY the JSON object. No markdown, no explanation.`
+- started_at must be RFC3339 format or JSON null
+- If this is NOT a ride receipt email, return exactly: {"not_a_receipt": true}
+- Output ONLY the JSON object. No markdown, no explanation, no extra text.`
 
 // LLMParser calls the Groq API to extract ride details from email bodies.
 // It satisfies the Parser interface; TrySnippet always returns false because
@@ -176,7 +176,7 @@ type groqResponse struct {
 // invoke calls the Groq API once and parses its JSON output.
 func (p *LLMParser) invoke(ctx context.Context, subject, body string) (*ParsedRide, error) {
 	userContent := fmt.Sprintf("Email to parse:\nSubject: %s\n\n%s",
-		subject, llmTruncate(body, 2000))
+		subject, llmTruncate(body, 4000))
 
 	reqBody := groqRequest{
 		Model:       p.model,
