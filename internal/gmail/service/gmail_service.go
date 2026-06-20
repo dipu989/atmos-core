@@ -75,7 +75,7 @@ type Config struct {
 	BatchSize       int64  // 0 → defaultBatchSize
 	MapsAPIKey      string // optional; enables geocoding of pickup/drop addresses
 	AnthropicAPIKey string // ANTHROPIC_API_KEY — enables LLM fallback parsing
-	LLMModel        string // ANTHROPIC_MODEL — defaults to claude-sonnet-4-6
+	LLMModel        string // ANTHROPIC_MODEL — defaults to claude-haiku-4-5-20251001
 }
 
 func NewGmailService(
@@ -91,7 +91,7 @@ func NewGmailService(
 	}
 	llmModel := cfg.LLMModel
 	if llmModel == "" {
-		llmModel = "claude-sonnet-4-6"
+		llmModel = "claude-haiku-4-5-20251001"
 	}
 	return &GmailService{
 		oauthCfg: &oauth2.Config{
@@ -870,7 +870,7 @@ func (s *GmailService) enrichUser(
 
 		ride, err := s.llmParser.ParseWithContext(ctx, subject, fullContent)
 		if err != nil {
-			log.Debug("gmail enrich: llm parse failed",
+			log.Warn("gmail enrich: llm parse failed",
 				zap.String("msg_id", entry.MessageID), zap.Error(err))
 			updateLog(entry.ID, domain.StatusFailed, nil)
 			result.Failed++
