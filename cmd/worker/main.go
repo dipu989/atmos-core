@@ -90,11 +90,13 @@ func main() {
 	notifSvc := notifservice.NewNotificationService(deviceRepo, fcmSender)
 	gmailSvc := gmailservice.NewGmailService(
 		gmailservice.Config{
-			ClientID:     cfg.Google.ClientID,
-			ClientSecret: cfg.Google.ClientSecret,
-			RedirectURL:  cfg.Google.GmailRedirectURL,
-			HMACSecret:   cfg.JWT.AccessSecret,
-			MapsAPIKey:   cfg.Google.MapsAPIKey,
+			ClientID:        cfg.Google.ClientID,
+			ClientSecret:    cfg.Google.ClientSecret,
+			RedirectURL:     cfg.Google.GmailRedirectURL,
+			HMACSecret:      cfg.JWT.AccessSecret,
+			MapsAPIKey:      cfg.Google.MapsAPIKey,
+			AnthropicAPIKey: cfg.Anthropic.APIKey,
+			LLMModel:        cfg.Anthropic.Model,
 		},
 		gmailConnRepo,
 		gmailLogRepo,
@@ -120,6 +122,17 @@ func main() {
 			zap.Int("total", result.Total),
 			zap.Int("synced", result.Synced),
 			zap.Int("skipped", result.Skipped),
+			zap.Int("failed", result.Failed),
+		)
+	})
+
+	// LLM enrichment for unrecognised emails — every 12 hours, offset from sync
+	c.AddFunc("0 1,13 * * *", func() {
+		log.Info("cron: starting llm enrichment")
+		result := gmailSvc.EnrichUnrecognisedAll(context.Background())
+		log.Info("cron: llm enrichment complete",
+			zap.Int("total_users", result.TotalUsers),
+			zap.Int("enriched", result.Enriched),
 			zap.Int("failed", result.Failed),
 		)
 	})

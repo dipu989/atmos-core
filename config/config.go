@@ -10,12 +10,18 @@ import (
 )
 
 type Config struct {
-	App    AppConfig
-	DB     DBConfig
-	JWT    JWTConfig
-	Google GoogleOAuthConfig
-	Email  EmailConfig
-	Push   PushConfig
+	App       AppConfig
+	DB        DBConfig
+	JWT       JWTConfig
+	Google    GoogleOAuthConfig
+	Email     EmailConfig
+	Push      PushConfig
+	Anthropic AnthropicConfig
+}
+
+type AnthropicConfig struct {
+	APIKey string // ANTHROPIC_API_KEY
+	Model  string // ANTHROPIC_MODEL — defaults to claude-sonnet-4-6
 }
 
 type PushConfig struct {
@@ -115,6 +121,10 @@ func Load() (*Config, error) {
 		},
 		Push: PushConfig{
 			FCMServiceAccountJSON: getEnv("FCM_SERVICE_ACCOUNT_JSON", ""),
+		},
+		Anthropic: AnthropicConfig{
+			APIKey: getEnv("ANTHROPIC_API_KEY", ""),
+			Model:  getEnv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
 		},
 	}
 

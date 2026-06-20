@@ -8,9 +8,10 @@ import (
 
 // Ingestion status values.
 const (
-	StatusParsed  = "parsed"
-	StatusSkipped = "skipped"
-	StatusFailed  = "failed"
+	StatusParsed       = "parsed"
+	StatusSkipped      = "skipped"
+	StatusFailed       = "failed"
+	StatusUnrecognised = "unrecognised" // no regex parser matched; queued for LLM enrichment
 )
 
 // EmailIngestionLog records every Gmail message we attempted to process.
