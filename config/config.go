@@ -10,18 +10,14 @@ import (
 )
 
 type Config struct {
-	App       AppConfig
-	DB        DBConfig
-	JWT       JWTConfig
-	Google    GoogleOAuthConfig
-	Email     EmailConfig
-	Push      PushConfig
-	Anthropic AnthropicConfig
-}
-
-type AnthropicConfig struct {
-	APIKey string // ANTHROPIC_API_KEY
-	Model  string // ANTHROPIC_MODEL — defaults to claude-sonnet-4-6
+	App        AppConfig
+	DB         DBConfig
+	JWT        JWTConfig
+	Google     GoogleOAuthConfig
+	Email      EmailConfig
+	Push       PushConfig
+	GroqAPIKey string // GROQ_API_KEY — enables LLM enrichment (empty disables it)
+	GroqModel  string // GROQ_MODEL — model to use (default: llama-3.1-8b-instant)
 }
 
 type PushConfig struct {
@@ -122,10 +118,8 @@ func Load() (*Config, error) {
 		Push: PushConfig{
 			FCMServiceAccountJSON: getEnv("FCM_SERVICE_ACCOUNT_JSON", ""),
 		},
-		Anthropic: AnthropicConfig{
-			APIKey: getEnv("ANTHROPIC_API_KEY", ""),
-			Model:  getEnv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-		},
+		GroqAPIKey: getEnv("GROQ_API_KEY", ""),
+		GroqModel:  getEnv("GROQ_MODEL", "llama-3.1-8b-instant"),
 	}
 
 	return cfg, nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,11 +12,8 @@ import (
 	"time"
 )
 
-const (
-	anthropicAPIURL  = "https://api.anthropic.com/v1/messages"
-	anthropicVersion = "2023-06-01"
-	llmMaxRetries    = 3
-)
+const llmMaxRetries = 3
+const groqEndpoint = "https://api.groq.com/openai/v1/chat/completions"
 
 var llmSystemPrompt = `You are a ride-receipt email parser. Extract ride information from the email and return ONLY a JSON object.
 
@@ -40,33 +38,40 @@ Rules:
 - If this is NOT a ride receipt, return: {"not_a_receipt": true}
 - Output ONLY the JSON object. No markdown, no explanation.`
 
-// LLMParser calls the Anthropic API to extract ride details from email bodies.
+// LLMParser calls the Groq API to extract ride details from email bodies.
 // It satisfies the Parser interface; TrySnippet always returns false because
-// the LLM needs the full body to be useful.
+// the full body is needed.
 type LLMParser struct {
-	apiKey    string
-	model     string
-	semaphore chan struct{}
-	client    *http.Client
+	apiKey     string
+	model      string
+	httpClient *http.Client
+	semaphore  chan struct{}
 }
 
-// NewLLMParser creates an LLMParser. maxConcurrent caps parallel API calls.
+// NewLLMParser creates an LLMParser backed by the Groq API.
+// apiKey is the GROQ_API_KEY value. model defaults to "llama-3.1-8b-instant".
+// maxConcurrent caps parallel in-flight HTTP requests.
 func NewLLMParser(apiKey, model string, maxConcurrent int) *LLMParser {
+	if model == "" {
+		model = "llama-3.1-8b-instant"
+	}
 	if maxConcurrent <= 0 {
 		maxConcurrent = 3
 	}
 	return &LLMParser{
-		apiKey:    apiKey,
-		model:     model,
-		semaphore: make(chan struct{}, maxConcurrent),
-		client:    &http.Client{Timeout: 60 * time.Second},
+		apiKey:     apiKey,
+		model:      model,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		semaphore:  make(chan struct{}, maxConcurrent),
 	}
 }
 
-// IsEnabled reports whether an API key is configured.
-func (p *LLMParser) IsEnabled() bool { return p.apiKey != "" }
+// IsEnabled reports whether a Groq API key is configured.
+func (p *LLMParser) IsEnabled() bool {
+	return p.apiKey != ""
+}
 
-// TrySnippet always returns false — LLM parsing requires the full body.
+// TrySnippet always returns false — Groq parsing requires the full body.
 func (p *LLMParser) TrySnippet(_, _ string) (*ParsedRide, bool) { return nil, false }
 
 // Parse satisfies the Parser interface using context.Background internally.
@@ -75,7 +80,7 @@ func (p *LLMParser) Parse(subject, body string) (*ParsedRide, error) {
 }
 
 // ParseWithContext is like Parse but respects the provided context for
-// cancellation and timeout during semaphore acquisition and HTTP calls.
+// cancellation and timeout during semaphore acquisition and HTTP execution.
 func (p *LLMParser) ParseWithContext(ctx context.Context, subject, body string) (*ParsedRide, error) {
 	if !p.IsEnabled() {
 		return nil, ErrUnrecognisedFormat
@@ -89,29 +94,10 @@ func (p *LLMParser) ParseWithContext(ctx context.Context, subject, body string) 
 	}
 	defer func() { <-p.semaphore }()
 
-	return p.callWithRetry(ctx, subject, body)
+	return p.invokeWithRetry(ctx, subject, body)
 }
 
 // ── internal ────────────────────────────────────────────────────────────────
-
-type anthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system"`
-	Messages  []anthropicMessage `json:"messages"`
-}
-
-type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-}
 
 type llmRideJSON struct {
 	NotAReceipt     bool     `json:"not_a_receipt"`
@@ -127,7 +113,13 @@ type llmRideJSON struct {
 	StartedAt       *string  `json:"started_at"`
 }
 
-func (p *LLMParser) callWithRetry(ctx context.Context, subject, body string) (*ParsedRide, error) {
+// groqFatalError wraps a non-retryable Groq API response (4xx except 429).
+type groqFatalError struct{ err error }
+
+func (e *groqFatalError) Error() string { return e.err.Error() }
+func (e *groqFatalError) Unwrap() error { return e.err }
+
+func (p *LLMParser) invokeWithRetry(ctx context.Context, subject, body string) (*ParsedRide, error) {
 	delay := 2 * time.Second
 	for attempt := 0; attempt < llmMaxRetries; attempt++ {
 		select {
@@ -136,11 +128,19 @@ func (p *LLMParser) callWithRetry(ctx context.Context, subject, body string) (*P
 		default:
 		}
 
-		ride, retryable, err := p.call(ctx, subject, body)
+		ride, err := p.invoke(ctx, subject, body)
 		if err == nil {
 			return ride, nil
 		}
-		if !retryable || attempt == llmMaxRetries-1 {
+		// Don't retry definitive rejections or non-retryable HTTP errors.
+		if errors.Is(err, ErrUnrecognisedFormat) {
+			return nil, err
+		}
+		var fatal *groqFatalError
+		if errors.As(err, &fatal) {
+			return nil, err
+		}
+		if attempt == llmMaxRetries-1 {
 			return nil, err
 		}
 
@@ -154,58 +154,87 @@ func (p *LLMParser) callWithRetry(ctx context.Context, subject, body string) (*P
 	return nil, ErrUnrecognisedFormat // unreachable: loop always returns on last attempt
 }
 
-// call makes one Anthropic API request. Returns (ride, retryable, error).
-func (p *LLMParser) call(ctx context.Context, subject, body string) (*ParsedRide, bool, error) {
-	content := fmt.Sprintf("Subject: %s\n\n%s", subject, llmTruncate(body, 8000))
+type groqMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
 
-	payload := anthropicRequest{
-		Model:     p.model,
-		MaxTokens: 512,
-		System:    llmSystemPrompt,
-		Messages:  []anthropicMessage{{Role: "user", Content: content}},
+type groqRequest struct {
+	Model       string        `json:"model"`
+	Temperature int           `json:"temperature"`
+	Messages    []groqMessage `json:"messages"`
+}
+
+type groqResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+// invoke calls the Groq API once and parses its JSON output.
+func (p *LLMParser) invoke(ctx context.Context, subject, body string) (*ParsedRide, error) {
+	userContent := fmt.Sprintf("Email to parse:\nSubject: %s\n\n%s",
+		subject, llmTruncate(body, 8000))
+
+	reqBody := groqRequest{
+		Model:       p.model,
+		Temperature: 0,
+		Messages: []groqMessage{
+			{Role: "system", Content: llmSystemPrompt},
+			{Role: "user", Content: userContent},
+		},
 	}
-	reqBytes, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, anthropicAPIURL, bytes.NewReader(reqBytes))
+	reqBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, false, fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("groq: marshal request: %w", err)
 	}
-	req.Header.Set("x-api-key", p.apiKey)
-	req.Header.Set("anthropic-version", anthropicVersion)
-	req.Header.Set("content-type", "application/json")
 
-	resp, err := p.client.Do(req)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, groqEndpoint, bytes.NewReader(reqBytes))
 	if err != nil {
-		return nil, true, fmt.Errorf("http: %w", err)
+		return nil, fmt.Errorf("groq: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("groq: http: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, true, fmt.Errorf("rate limited (429)")
-	}
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, false, fmt.Errorf("anthropic %d: %s", resp.StatusCode, llmTruncate(string(body), 200))
-	}
-
-	raw, err := io.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, false, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("groq: read response: %w", err)
 	}
 
-	var apiResp anthropicResponse
-	if err := json.Unmarshal(raw, &apiResp); err != nil || len(apiResp.Content) == 0 {
-		return nil, false, ErrUnrecognisedFormat
+	if resp.StatusCode != http.StatusOK {
+		wrapped := fmt.Errorf("groq: status %d: %s", resp.StatusCode, llmTruncate(string(respBytes), 200))
+		// 4xx errors other than 429 (Too Many Requests) are not transient — don't retry.
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
+			return nil, &groqFatalError{err: wrapped}
+		}
+		return nil, wrapped
 	}
 
-	text := llmStripFence(strings.TrimSpace(apiResp.Content[0].Text))
+	var groqResp groqResponse
+	if err := json.Unmarshal(respBytes, &groqResp); err != nil {
+		return nil, fmt.Errorf("groq: parse response: %w", err)
+	}
+	if len(groqResp.Choices) == 0 {
+		return nil, fmt.Errorf("groq: empty choices in response")
+	}
+
+	text := llmStripFence(strings.TrimSpace(groqResp.Choices[0].Message.Content))
 
 	var data llmRideJSON
 	if err := json.Unmarshal([]byte(text), &data); err != nil {
-		return nil, false, fmt.Errorf("parse llm json: %w", err)
+		return nil, fmt.Errorf("groq: parse llm json: %w (output: %s)", err, llmTruncate(text, 200))
 	}
 	if data.NotAReceipt {
-		return nil, false, ErrUnrecognisedFormat
+		return nil, ErrUnrecognisedFormat
 	}
 
 	ride := &ParsedRide{
@@ -237,7 +266,7 @@ func (p *LLMParser) call(ctx context.Context, subject, body string) (*ParsedRide
 		}
 	}
 
-	return ride, false, nil
+	return ride, nil
 }
 
 func llmNormaliseMode(mode string) string {
