@@ -10,13 +10,14 @@ import (
 )
 
 type Config struct {
-	App       AppConfig
-	DB        DBConfig
-	JWT       JWTConfig
-	Google    GoogleOAuthConfig
-	Email     EmailConfig
-	Push      PushConfig
-	ClaudeBin string // CLAUDE_BIN — path to claude CLI binary (default: "claude")
+	App        AppConfig
+	DB         DBConfig
+	JWT        JWTConfig
+	Google     GoogleOAuthConfig
+	Email      EmailConfig
+	Push       PushConfig
+	GroqAPIKey string // GROQ_API_KEY — enables LLM enrichment (empty disables it)
+	GroqModel  string // GROQ_MODEL — model to use (default: llama-3.1-8b-instant)
 }
 
 type PushConfig struct {
@@ -117,7 +118,8 @@ func Load() (*Config, error) {
 		Push: PushConfig{
 			FCMServiceAccountJSON: getEnv("FCM_SERVICE_ACCOUNT_JSON", ""),
 		},
-		ClaudeBin: getEnv("CLAUDE_BIN", "claude"),
+		GroqAPIKey: getEnv("GROQ_API_KEY", ""),
+		GroqModel:  getEnv("GROQ_MODEL", "llama-3.1-8b-instant"),
 	}
 
 	return cfg, nil
