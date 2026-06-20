@@ -170,6 +170,7 @@ func (h *GmailHandler) Sync(c *fiber.Ctx) error {
 		Parsed:          result.Parsed,
 		Skipped:         result.Skipped,
 		Failed:          result.Failed,
+		Unrecognised:    result.Unrecognised,
 		Message:         "sync complete",
 	})
 }
@@ -215,6 +216,48 @@ func (h *GmailHandler) ResetSync(c *fiber.Ctx) error {
 // @Router      /internal/gmail/sync-all [post]
 func (h *GmailHandler) SyncAll(c *fiber.Ctx) error {
 	result := h.svc.SyncAll(c.Context())
+	return response.OK(c, result)
+}
+
+// EnrichUnrecognised godoc
+// @Summary     Re-parse unrecognised emails via LLM
+// @Description Fetches emails that failed regex parsing (status=unrecognised) and
+//
+//	re-processes them using the Anthropic API. Requires ANTHROPIC_API_KEY to be set.
+//
+// @Tags        gmail
+// @Produce     json
+// @Security    BearerAuth
+// @Success     200 {object} map[string]interface{}
+// @Failure     401 {object} map[string]interface{}
+// @Failure     422 {object} map[string]interface{}
+// @Router      /gmail/enrich-unrecognised [post]
+func (h *GmailHandler) EnrichUnrecognised(c *fiber.Ctx) error {
+	userID := middleware.CurrentUserID(c)
+	result, err := h.svc.EnrichUnrecognised(c.Context(), userID)
+	if err != nil {
+		if errors.Is(err, service.ErrNotConnected) {
+			return response.BadRequest(c, "gmail not connected — call /gmail/connect first")
+		}
+		return response.InternalError(c, "enrich failed: "+err.Error())
+	}
+	return response.OK(c, result)
+}
+
+// EnrichUnrecognisedAll godoc
+// @Summary     Re-parse unrecognised emails for all users via LLM
+// @Description Internal endpoint called by the worker cron to enrich emails
+//
+//	that failed regex parsing for every connected user.
+//
+// @Tags        internal
+// @Produce     json
+// @Param       X-Internal-Key header string true "Internal shared secret"
+// @Success     200 {object} map[string]interface{}
+// @Failure     401 {object} map[string]interface{}
+// @Router      /internal/gmail/enrich-all [post]
+func (h *GmailHandler) EnrichUnrecognisedAll(c *fiber.Ctx) error {
+	result := h.svc.EnrichUnrecognisedAll(c.Context())
 	return response.OK(c, result)
 }
 

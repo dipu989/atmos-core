@@ -36,6 +36,7 @@ type SyncResponse struct {
 	Parsed          int    `json:"parsed"`
 	Skipped         int    `json:"skipped"`
 	Failed          int    `json:"failed"`
+	Unrecognised    int    `json:"unrecognised,omitempty"` // queued for LLM enrichment
 	Message         string `json:"message"`
 }
 

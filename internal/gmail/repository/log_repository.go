@@ -17,16 +17,6 @@ func NewLogRepository(db *gorm.DB) *LogRepository {
 	return &LogRepository{db: db}
 }
 
-// IsProcessed returns true if we have already attempted this Gmail message for this user.
-func (r *LogRepository) IsProcessed(ctx context.Context, userID uuid.UUID, messageID string) (bool, error) {
-	var count int64
-	err := r.db.WithContext(ctx).
-		Model(&domain.EmailIngestionLog{}).
-		Where("user_id = ? AND message_id = ?", userID, messageID).
-		Count(&count).Error
-	return count > 0, err
-}
-
 func (r *LogRepository) Create(ctx context.Context, log *domain.EmailIngestionLog) error {
 	return r.db.WithContext(ctx).Create(log).Error
 }
@@ -53,4 +43,29 @@ func (r *LogRepository) FindByMessageID(ctx context.Context, userID uuid.UUID, m
 		return nil, nil
 	}
 	return &log, err
+}
+
+// ListUnrecognised returns up to limit log entries with status "unrecognised"
+// for a specific user, ordered oldest-first so the earliest queued emails are
+// processed first.
+func (r *LogRepository) ListUnrecognised(ctx context.Context, userID uuid.UUID, limit int) ([]domain.EmailIngestionLog, error) {
+	var logs []domain.EmailIngestionLog
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND status = ?", userID, domain.StatusUnrecognised).
+		Order("parsed_at ASC").
+		Limit(limit).
+		Find(&logs).Error
+	return logs, err
+}
+
+// UpdateStatus sets the status (and optionally activity_id) on an existing log entry.
+func (r *LogRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status string, activityID *uuid.UUID) error {
+	updates := map[string]any{"status": status}
+	if activityID != nil {
+		updates["activity_id"] = *activityID
+	}
+	return r.db.WithContext(ctx).
+		Model(&domain.EmailIngestionLog{}).
+		Where("id = ?", id).
+		Updates(updates).Error
 }

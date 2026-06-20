@@ -109,6 +109,12 @@ func (s *ActivityService) BackfillRouteLabels(ctx context.Context, id uuid.UUID,
 	return s.repo.BackfillRouteLabels(ctx, id, origin, destination)
 }
 
+// HasRouteLabels reports whether the activity already has origin or destination
+// populated. Used to skip expensive Gmail API fetches when backfill is not needed.
+func (s *ActivityService) HasRouteLabels(ctx context.Context, id uuid.UUID) (bool, error) {
+	return s.repo.HasRouteLabels(ctx, id)
+}
+
 // dedupCandidateWindow is how far on each side of a receipt's time window we
 // search for existing GPS activities. Accounts for GPS waking up late and
 // minor clock drift between providers.

@@ -62,17 +62,20 @@ type GmailService struct {
 	activitySvc *actservice.ActivityService
 	registry    *parser.Registry
 	geocoder    geocoder.Geocoder
+	llmParser   *parser.LLMParser
 	hmacSecret  []byte
 	batchSize   int64
 }
 
 type Config struct {
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
-	HMACSecret   string // JWT_ACCESS_SECRET is reused
-	BatchSize    int64  // 0 → defaultBatchSize
-	MapsAPIKey   string // optional; enables geocoding of pickup/drop addresses
+	ClientID        string
+	ClientSecret    string
+	RedirectURL     string
+	HMACSecret      string // JWT_ACCESS_SECRET is reused
+	BatchSize       int64  // 0 → defaultBatchSize
+	MapsAPIKey      string // optional; enables geocoding of pickup/drop addresses
+	AnthropicAPIKey string // ANTHROPIC_API_KEY — enables LLM fallback parsing
+	LLMModel        string // ANTHROPIC_MODEL — defaults to claude-sonnet-4-6
 }
 
 func NewGmailService(
@@ -85,6 +88,10 @@ func NewGmailService(
 	batchSize := cfg.BatchSize
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
+	}
+	llmModel := cfg.LLMModel
+	if llmModel == "" {
+		llmModel = "claude-sonnet-4-6"
 	}
 	return &GmailService{
 		oauthCfg: &oauth2.Config{
@@ -100,6 +107,7 @@ func NewGmailService(
 		activitySvc: activitySvc,
 		registry:    parser.NewRegistry(),
 		geocoder:    geocoder.New(cfg.MapsAPIKey),
+		llmParser:   parser.NewLLMParser(cfg.AnthropicAPIKey, llmModel, 3),
 		hmacSecret:  []byte(cfg.HMACSecret),
 		batchSize:   batchSize,
 	}
@@ -183,6 +191,7 @@ type SyncResult struct {
 	Parsed          int `json:"parsed"`
 	Skipped         int `json:"skipped"`
 	Failed          int `json:"failed"`
+	Unrecognised    int `json:"unrecognised,omitempty"` // queued for LLM enrichment
 }
 
 // Sync fetches ride-receipt emails from Gmail and ingests them as activities.
@@ -466,6 +475,8 @@ func (s *GmailService) processMessages(
 				result.Parsed++
 			case domain.StatusFailed:
 				result.Failed++
+			case domain.StatusUnrecognised:
+				result.Unrecognised++
 			default:
 				result.Skipped++
 			}
@@ -489,13 +500,23 @@ func (s *GmailService) handleMessage(
 	// ── Layer 1 dedup: skip if already in email_ingestion_logs ───────────────
 	existingLog, err := s.logRepo.FindByMessageID(ctx, userID, messageID)
 	if err != nil {
-		logger.L().Warn("gmail: idempotency check failed", zap.Error(err))
+		// Treat a DB error as "already seen" to avoid duplicate processing and
+		// the unique-constraint violation that would follow on logRepo.Create.
+		logger.L().Warn("gmail: idempotency check failed, skipping message", zap.Error(err))
+		return msgOutcome{messageID: messageID}
 	}
 	if existingLog != nil {
-		// Already processed — but opportunistically backfill origin/destination
-		// when the activity is missing them (e.g. after the snippet-parse fix).
+		// Already processed — opportunistically backfill origin/destination only
+		// when the activity is still missing them. The HasRouteLabels check avoids
+		// a Gmail API fetch for the common case where addresses are already set.
 		if existingLog.ActivityID != nil {
-			s.tryBackfillAddresses(ctx, gmailSvc, userID, messageID, *existingLog.ActivityID, routingMap)
+			has, err := s.activitySvc.HasRouteLabels(ctx, *existingLog.ActivityID)
+			if err != nil {
+				logger.L().Warn("gmail: HasRouteLabels check failed, skipping backfill",
+					zap.Stringer("activity_id", *existingLog.ActivityID), zap.Error(err))
+			} else if !has {
+				s.tryBackfillAddresses(ctx, gmailSvc, userID, messageID, *existingLog.ActivityID, routingMap)
+			}
 		}
 		return msgOutcome{messageID: messageID} // nil log = already done
 	}
@@ -600,6 +621,11 @@ func (s *GmailService) handleMessage(
 	}
 
 	// All candidates tried and none succeeded.
+	// When the LLM parser is configured, mark the email for async enrichment
+	// rather than a hard failure — the worker cron will retry via Anthropic.
+	if s.llmParser.IsEnabled() {
+		return s.unrecognisedOutcome(userID, messageID, &candidates[0].Code, subject, snippet)
+	}
 	return s.failOutcome(userID, messageID, &candidates[0].Code, subject, snippet,
 		fmt.Errorf("%w: no parser matched body", parser.ErrUnrecognisedFormat))
 }
@@ -614,9 +640,33 @@ func (s *GmailService) ingestRide(
 	dateHeader, subject, snippet string,
 	ride *parser.ParsedRide,
 ) msgOutcome {
+	activity, err := s.buildAndIngest(ctx, userID, messageID, candidate.ProviderCode, dateHeader, ride)
+	if errors.Is(err, actservice.ErrDuplicate) {
+		return s.skipOutcome(userID, messageID, &resolvedCode, subject, snippet)
+	}
+	if err != nil {
+		return s.failOutcome(userID, messageID, &resolvedCode, subject, snippet,
+			fmt.Errorf("ingest activity: %w", err))
+	}
+	logEntry := s.newLog(userID, messageID, &resolvedCode, subject, snippet, domain.StatusParsed)
+	logEntry.ActivityID = &activity.ID
+	return msgOutcome{messageID: messageID, log: logEntry, counted: true}
+}
+
+// buildAndIngest geocodes addresses and calls IngestWithDedup.
+// Extracted so that both the sync path (ingestRide) and the async LLM enrichment
+// path (EnrichUnrecognised) can share the same ingestion logic without coupling
+// them to the log-outcome pattern.
+func (s *GmailService) buildAndIngest(
+	ctx context.Context,
+	userID uuid.UUID,
+	messageID string,
+	providerCode string,
+	dateHeader string,
+	ride *parser.ParsedRide,
+) (*actdomain.Activity, error) {
 	log := logger.L()
 
-	// Fall back to email Date: header when parser couldn't extract a date.
 	startedAt := ride.StartedAt
 	if startedAt.IsZero() {
 		startedAt = parseEmailDate(dateHeader)
@@ -660,17 +710,13 @@ func (s *GmailService) ingestRide(
 	}()
 	pickupRes := <-pickupCh
 	dropRes := <-dropCh
-	pickupLat, pickupLng := pickupRes.lat, pickupRes.lng
-	dropLat, dropLng := dropRes.lat, dropRes.lng
 
-	// Compute a derived EndedAt from DurationMinutes when we have a start time.
 	var endedAt *time.Time
 	if ride.DurationMinutes != nil {
 		end := startedAt.Add(time.Duration(*ride.DurationMinutes) * time.Minute)
 		endedAt = &end
 	}
 
-	// Fare currency defaults to INR (all current providers are India-based).
 	fareCurrency := ride.Currency
 	if fareCurrency == "" && ride.FareAmount != nil {
 		fareCurrency = "INR"
@@ -680,10 +726,6 @@ func (s *GmailService) ingestRide(
 		fareCurrencyPtr = &fareCurrency
 	}
 
-	// IngestWithDedup runs the TripMatcher before creating a row:
-	// if a GPS activity from the same trip already exists it is enriched in place;
-	// otherwise a new receipt-sourced activity is created.
-	// Layer 2 idempotency: "gmail:<messageId>" ensures replay safety.
 	receiptID := messageID
 	var originPtr, destinationPtr *string
 	if ride.PickupAddress != "" {
@@ -692,6 +734,7 @@ func (s *GmailService) ingestRide(
 	if ride.DropAddress != "" {
 		destinationPtr = &ride.DropAddress
 	}
+
 	activity, _, err := s.activitySvc.IngestWithDedup(ctx, actservice.IngestInput{
 		UserID:          userID,
 		ActivityType:    actType,
@@ -699,7 +742,7 @@ func (s *GmailService) ingestRide(
 		DistanceKM:      &ride.DistanceKM,
 		DurationMinutes: ride.DurationMinutes,
 		Source:          actdomain.SourceGmail,
-		Provider:        &candidate.ProviderCode, // "uber", "rapido"
+		Provider:        &providerCode,
 		RawMetadata:     actdomain.RawMetadata(ride.Metadata),
 		StartedAt:       startedAt,
 		EndedAt:         endedAt,
@@ -707,25 +750,224 @@ func (s *GmailService) ingestRide(
 		IdempotencyKey:  "gmail:" + messageID,
 		Origin:          originPtr,
 		Destination:     destinationPtr,
-		OriginLat:       pickupLat,
-		OriginLng:       pickupLng,
-		DestLat:         dropLat,
-		DestLng:         dropLng,
+		OriginLat:       pickupRes.lat,
+		OriginLng:       pickupRes.lng,
+		DestLat:         dropRes.lat,
+		DestLng:         dropRes.lng,
 		ReceiptID:       &receiptID,
 		FareAmount:      ride.FareAmount,
 		FareCurrency:    fareCurrencyPtr,
 	})
-	if errors.Is(err, actservice.ErrDuplicate) {
-		return s.skipOutcome(userID, messageID, &resolvedCode, subject, snippet)
-	}
+	return activity, err
+}
+
+// ── LLM enrichment ────────────────────────────────────────────────────────────
+
+// EnrichResult summarises one LLM enrichment run for a single user.
+type EnrichResult struct {
+	Total    int `json:"total"`
+	Enriched int `json:"enriched"`
+	Skipped  int `json:"skipped"`
+	Failed   int `json:"failed"`
+}
+
+// AllEnrichResult summarises an EnrichUnrecognisedAll run.
+type AllEnrichResult struct {
+	TotalUsers  int    `json:"total_users"`
+	Enriched    int    `json:"enriched"`
+	Failed      int    `json:"failed"`       // email-level parse/ingest failures
+	UsersFailed int    `json:"users_failed"` // users whose auth or DB setup failed
+	Error       string `json:"error,omitempty"`
+}
+
+// EnrichUnrecognised re-processes emails that previously failed regex parsing
+// by sending them to the Anthropic API. Each successfully parsed email creates
+// an activity and updates the existing log entry from "unrecognised" to "parsed".
+func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID) (*EnrichResult, error) {
+	conn, err := s.connRepo.FindByUserID(ctx, userID)
 	if err != nil {
-		return s.failOutcome(userID, messageID, &resolvedCode, subject, snippet,
-			fmt.Errorf("ingest activity: %w", err))
+		return nil, err
+	}
+	if conn == nil {
+		return nil, ErrNotConnected
 	}
 
-	logEntry := s.newLog(userID, messageID, &resolvedCode, subject, snippet, domain.StatusParsed)
-	logEntry.ActivityID = &activity.ID
-	return msgOutcome{messageID: messageID, log: logEntry, counted: true}
+	gmailSvc, err := s.gmailClient(ctx, conn)
+	if err != nil {
+		return nil, err // gmailClient wraps revoked-token errors as ErrNotConnected
+	}
+
+	routingMap, err := s.provRepo.BuildRoutingMap(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("build routing map: %w", err)
+	}
+
+	return s.enrichUser(ctx, userID, gmailSvc, routingMap)
+}
+
+// enrichUser processes the unrecognised queue for one user given an already-authenticated
+// Gmail client and a pre-built routing map. Splitting this from EnrichUnrecognised lets
+// EnrichUnrecognisedAll build the routing map once for all users.
+func (s *GmailService) enrichUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	gmailSvc *googleapi.Service,
+	routingMap repository.RoutingMap,
+) (*EnrichResult, error) {
+	log := logger.L()
+
+	unrecognised, err := s.logRepo.ListUnrecognised(ctx, userID, 50)
+	if err != nil {
+		return nil, fmt.Errorf("list unrecognised: %w", err)
+	}
+
+	result := &EnrichResult{Total: len(unrecognised)}
+	if len(unrecognised) == 0 {
+		return result, nil
+	}
+
+	// updateLog writes a status update using a context that is not bound to the
+	// HTTP request lifecycle. This prevents a client disconnect from leaving a
+	// log entry in a stale state (e.g. permanently StatusFailed) when the DB
+	// write itself would have succeeded.
+	updateLog := func(id uuid.UUID, status string, activityID *uuid.UUID) {
+		writeCtx := context.WithoutCancel(ctx)
+		if err := s.logRepo.UpdateStatus(writeCtx, id, status, activityID); err != nil {
+			log.Warn("gmail enrich: update log status failed",
+				zap.Stringer("log_id", id), zap.String("status", status), zap.Error(err))
+		}
+	}
+
+	for _, entry := range unrecognised {
+		msg, err := gmailSvc.Users.Messages.Get("me", entry.MessageID).
+			Format("full").Context(ctx).Do()
+		if err != nil {
+			// Don't mark StatusFailed on a fetch error — a token problem would
+			// poison every entry in the batch. Leave as StatusUnrecognised so
+			// the next cron run can retry once auth is restored.
+			log.Warn("gmail enrich: fetch message failed",
+				zap.String("msg_id", entry.MessageID), zap.Error(err))
+			result.Failed++
+			continue
+		}
+
+		fromRaw, subject, dateHeader := extractHeaders(msg)
+		from := extractEmailAddress(fromRaw)
+
+		// Build the content to send to the LLM. When the email has a plain-text
+		// part, append the raw HTML so the model can also see map URLs and
+		// structured addresses. When there is no plain-text part, send the raw
+		// HTML directly — extractBody would return stripHTML(rawHTML), which
+		// would just double the payload size with redundant content.
+		rawHTML := extractPart(msg.Payload, "text/html")
+		plainText := extractPart(msg.Payload, "text/plain")
+		var fullContent string
+		if plainText != "" {
+			fullContent = plainText + "\n\n" + rawHTML
+		} else {
+			fullContent = rawHTML
+		}
+
+		ride, err := s.llmParser.ParseWithContext(ctx, subject, fullContent)
+		if err != nil {
+			log.Debug("gmail enrich: llm parse failed",
+				zap.String("msg_id", entry.MessageID), zap.Error(err))
+			updateLog(entry.ID, domain.StatusFailed, nil)
+			result.Failed++
+			continue
+		}
+
+		// Merge HTML-extracted map coords as fallback if LLM didn't return any.
+		htmlPickupLat, htmlPickupLng, htmlDropLat, htmlDropLng := parser.ExtractMapCoords(rawHTML)
+		if ride.PickupLat == nil {
+			ride.PickupLat, ride.PickupLng = htmlPickupLat, htmlPickupLng
+		}
+		if ride.DropLat == nil {
+			ride.DropLat, ride.DropLng = htmlDropLat, htmlDropLng
+		}
+
+		// Determine provider code: prefer routing map over LLM metadata guess.
+		providerCode := "unknown"
+		candidates := filterBySubject(routingMap[strings.ToLower(from)], subject)
+		if len(candidates) > 0 {
+			providerCode = candidates[0].ProviderCode
+		} else if pc, ok := ride.Metadata["provider"].(string); ok && pc != "" {
+			providerCode = pc
+		}
+
+		activity, err := s.buildAndIngest(ctx, userID, entry.MessageID, providerCode, dateHeader, ride)
+		if errors.Is(err, actservice.ErrDuplicate) {
+			// Activity already exists (e.g. cron ran twice before log update).
+			updateLog(entry.ID, domain.StatusSkipped, nil)
+			result.Skipped++
+			continue
+		}
+		if err != nil {
+			log.Warn("gmail enrich: ingest failed",
+				zap.String("msg_id", entry.MessageID), zap.Error(err))
+			updateLog(entry.ID, domain.StatusFailed, nil)
+			result.Failed++
+			continue
+		}
+
+		updateLog(entry.ID, domain.StatusParsed, &activity.ID)
+		result.Enriched++
+	}
+
+	log.Info("gmail enrich: user complete",
+		zap.Stringer("user_id", userID),
+		zap.Int("total", result.Total),
+		zap.Int("enriched", result.Enriched),
+		zap.Int("failed", result.Failed),
+	)
+	return result, nil
+}
+
+// EnrichUnrecognisedAll runs enrichUser for every connected user.
+// Called by the worker cron and POST /internal/gmail/enrich-all.
+// The routing map is built once and shared across all users to avoid N redundant queries.
+func (s *GmailService) EnrichUnrecognisedAll(ctx context.Context) *AllEnrichResult {
+	log := logger.L()
+
+	conns, err := s.connRepo.FindAllConnected(ctx)
+	if err != nil {
+		log.Error("gmail enrich all: list connections", zap.Error(err))
+		return &AllEnrichResult{Error: err.Error()}
+	}
+
+	routingMap, err := s.provRepo.BuildRoutingMap(ctx)
+	if err != nil {
+		log.Error("gmail enrich all: build routing map", zap.Error(err))
+		return &AllEnrichResult{TotalUsers: len(conns), Error: err.Error()}
+	}
+
+	res := &AllEnrichResult{TotalUsers: len(conns)}
+	for i := range conns {
+		gmailSvc, err := s.gmailClient(ctx, &conns[i])
+		if err != nil {
+			log.Warn("gmail enrich all: auth failed",
+				zap.Stringer("user_id", conns[i].UserID), zap.Error(err))
+			res.UsersFailed++
+			continue
+		}
+		result, err := s.enrichUser(ctx, conns[i].UserID, gmailSvc, routingMap)
+		if err != nil {
+			log.Warn("gmail enrich all: user failed",
+				zap.Stringer("user_id", conns[i].UserID), zap.Error(err))
+			res.UsersFailed++
+			continue
+		}
+		res.Enriched += result.Enriched
+		res.Failed += result.Failed
+	}
+
+	log.Info("gmail enrich all: complete",
+		zap.Int("total_users", res.TotalUsers),
+		zap.Int("enriched", res.Enriched),
+		zap.Int("emails_failed", res.Failed),
+		zap.Int("users_failed", res.UsersFailed),
+	)
+	return res
 }
 
 // tryBackfillAddresses fetches and re-parses a previously ingested email to
@@ -779,6 +1021,16 @@ func (s *GmailService) skipOutcome(userID uuid.UUID, msgID string, code *string,
 	return msgOutcome{
 		messageID: msgID,
 		log:       s.newLog(userID, msgID, code, subject, snippet, domain.StatusSkipped),
+		counted:   true,
+	}
+}
+
+// unrecognisedOutcome records the email as pending LLM enrichment.
+// The worker cron picks these up via EnrichUnrecognisedAll.
+func (s *GmailService) unrecognisedOutcome(userID uuid.UUID, msgID string, code *string, subject, snippet string) msgOutcome {
+	return msgOutcome{
+		messageID: msgID,
+		log:       s.newLog(userID, msgID, code, subject, snippet, domain.StatusUnrecognised),
 		counted:   true,
 	}
 }
@@ -851,9 +1103,11 @@ func (s *GmailService) gmailClient(ctx context.Context, conn *domain.GmailConnec
 	ts := s.oauthCfg.TokenSource(ctx, stored)
 
 	// Token() triggers a refresh when the access token is expired.
+	// A refresh failure means the connection is broken (revoked grant), so we
+	// wrap as ErrNotConnected so all callers can surface a meaningful error.
 	fresh, err := ts.Token()
 	if err != nil {
-		return nil, fmt.Errorf("token refresh: %w", err)
+		return nil, fmt.Errorf("%w: token refresh: %v", ErrNotConnected, err)
 	}
 	if fresh.AccessToken != conn.AccessToken {
 		conn.AccessToken = fresh.AccessToken

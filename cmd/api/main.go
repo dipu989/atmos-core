@@ -160,11 +160,13 @@ func main() {
 	notifSvc := notifservice.NewNotificationService(deviceRepo, fcmSender)
 	gmailSvc := gmailservice.NewGmailService(
 		gmailservice.Config{
-			ClientID:     cfg.Google.ClientID,
-			ClientSecret: cfg.Google.ClientSecret,
-			RedirectURL:  cfg.Google.GmailRedirectURL,
-			HMACSecret:   cfg.JWT.AccessSecret,
-			MapsAPIKey:   cfg.Google.MapsAPIKey,
+			ClientID:        cfg.Google.ClientID,
+			ClientSecret:    cfg.Google.ClientSecret,
+			RedirectURL:     cfg.Google.GmailRedirectURL,
+			HMACSecret:      cfg.JWT.AccessSecret,
+			MapsAPIKey:      cfg.Google.MapsAPIKey,
+			AnthropicAPIKey: cfg.Anthropic.APIKey,
+			LLMModel:        cfg.Anthropic.Model,
 		},
 		gmailConnRepo,
 		gmailLogRepo,
@@ -282,6 +284,7 @@ func main() {
 	protected.Delete("/gmail/disconnect", gmailH.Disconnect)
 	protected.Post("/gmail/sync", gmailH.Sync)
 	protected.Post("/gmail/reset-sync", gmailH.ResetSync)
+	protected.Post("/gmail/enrich-unrecognised", gmailH.EnrichUnrecognised)
 	protected.Get("/gmail/logs", gmailH.Logs)
 
 	// --- Internal endpoints (cron-triggered, not user-facing) ---
@@ -289,6 +292,7 @@ func main() {
 	// Protected by X-Internal-Key header (INTERNAL_SYNC_KEY env var).
 	internal := app.Group("/internal", middleware.RequireInternalKey(cfg.App.InternalSyncKey))
 	internal.Post("/gmail/sync-all", gmailH.SyncAll)
+	internal.Post("/gmail/enrich-all", gmailH.EnrichUnrecognisedAll)
 	internal.Post("/users/purge-deleted", func(c *fiber.Ctx) error {
 		n, err := identitySvc.PurgeDeletedAccounts(c.Context())
 		if err != nil {
