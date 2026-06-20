@@ -556,6 +556,40 @@ func (s *GmailService) handleMessage(
 	htmlPickupLat, htmlPickupLng, htmlDropLat, htmlDropLng := parser.ExtractMapCoords(rawHTML)
 	body := extractBody(msg)
 
+	// ── LLM-first path ───────────────────────────────────────────────────────
+	// When Groq is configured, try it before the regex parsers. The LLM can
+	// extract pickup/drop addresses that regex cannot, and handles format
+	// changes in provider emails automatically.
+	if s.llmParser.IsEnabled() {
+		plainText := extractPart(msg.Payload, "text/plain")
+		var llmContent string
+		if plainText != "" {
+			if len(plainText) > 5000 {
+				plainText = plainText[:5000]
+			}
+			llmContent = plainText + "\n\n" + rawHTML
+		} else {
+			llmContent = rawHTML
+		}
+		ride, err := s.llmParser.ParseWithContext(ctx, subject, llmContent)
+		if err == nil {
+			if ride.PickupLat == nil {
+				ride.PickupLat, ride.PickupLng = htmlPickupLat, htmlPickupLng
+			}
+			if ride.DropLat == nil {
+				ride.DropLat, ride.DropLng = htmlDropLat, htmlDropLng
+			}
+			resolved := resolveCode(candidates, ride.ProviderEmailTypeCode, candidates[0].Code)
+			return s.ingestRide(ctx, userID, messageID, resolved, candidates[0], dateHeader, subject, snippet, ride)
+		}
+		if errors.Is(err, parser.ErrUnrecognisedFormat) {
+			return s.skipOutcome(userID, messageID, &candidates[0].Code, subject, snippet)
+		}
+		// Transient error (network, rate-limit) — fall through to regex parsers.
+		logger.L().Warn("gmail sync: llm parse failed, falling back to regex",
+			zap.String("msg_id", messageID), zap.Error(err))
+	}
+
 	for _, candidate := range candidates {
 		p, ok := s.registry.Get(candidate.Code)
 		if !ok {
@@ -616,12 +650,7 @@ func (s *GmailService) handleMessage(
 		return s.ingestRide(ctx, userID, messageID, resolved, candidate, dateHeader, subject, snippet, fullRide)
 	}
 
-	// All candidates tried and none succeeded.
-	// When the LLM parser is configured, mark the email for async enrichment
-	// rather than a hard failure — the worker cron will retry via the Groq API.
-	if s.llmParser.IsEnabled() {
-		return s.unrecognisedOutcome(userID, messageID, &candidates[0].Code, subject, snippet)
-	}
+	// All candidates tried and none succeeded. LLM already ran (or is disabled).
 	return s.failOutcome(userID, messageID, &candidates[0].Code, subject, snippet,
 		fmt.Errorf("%w: no parser matched body", parser.ErrUnrecognisedFormat))
 }
