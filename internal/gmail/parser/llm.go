@@ -176,7 +176,7 @@ type groqResponse struct {
 // invoke calls the Groq API once and parses its JSON output.
 func (p *LLMParser) invoke(ctx context.Context, subject, body string) (*ParsedRide, error) {
 	userContent := fmt.Sprintf("Email to parse:\nSubject: %s\n\n%s",
-		subject, llmTruncate(body, 8000))
+		subject, llmTruncate(body, 2000))
 
 	reqBody := groqRequest{
 		Model:       p.model,
