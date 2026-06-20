@@ -223,7 +223,7 @@ func (h *GmailHandler) SyncAll(c *fiber.Ctx) error {
 // @Summary     Re-parse unrecognised emails via LLM
 // @Description Fetches emails that failed regex parsing (status=unrecognised) and
 //
-//	re-processes them using the Anthropic API. Requires ANTHROPIC_API_KEY to be set.
+//	re-processes them using the Groq API. Requires GROQ_API_KEY to be set.
 //
 // @Tags        gmail
 // @Produce     json

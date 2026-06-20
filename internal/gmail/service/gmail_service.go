@@ -74,7 +74,8 @@ type Config struct {
 	HMACSecret   string // JWT_ACCESS_SECRET is reused
 	BatchSize    int64  // 0 → defaultBatchSize
 	MapsAPIKey   string // optional; enables geocoding of pickup/drop addresses
-	ClaudeBin    string // CLAUDE_BIN — path to claude CLI binary (default: "claude")
+	GroqAPIKey   string // GROQ_API_KEY — enables LLM enrichment (empty disables it)
+	GroqModel    string // GROQ_MODEL — model to use (default: llama-3.1-8b-instant)
 }
 
 func NewGmailService(
@@ -102,7 +103,7 @@ func NewGmailService(
 		activitySvc: activitySvc,
 		registry:    parser.NewRegistry(),
 		geocoder:    geocoder.New(cfg.MapsAPIKey),
-		llmParser:   parser.NewLLMParser(cfg.ClaudeBin, 3),
+		llmParser:   parser.NewLLMParser(cfg.GroqAPIKey, cfg.GroqModel, 3),
 		hmacSecret:  []byte(cfg.HMACSecret),
 		batchSize:   batchSize,
 	}
@@ -617,7 +618,7 @@ func (s *GmailService) handleMessage(
 
 	// All candidates tried and none succeeded.
 	// When the LLM parser is configured, mark the email for async enrichment
-	// rather than a hard failure — the worker cron will retry via the claude CLI.
+	// rather than a hard failure — the worker cron will retry via the Groq API.
 	if s.llmParser.IsEnabled() {
 		return s.unrecognisedOutcome(userID, messageID, &candidates[0].Code, subject, snippet)
 	}
@@ -776,8 +777,8 @@ type AllEnrichResult struct {
 }
 
 // EnrichUnrecognised re-processes emails that previously failed regex parsing
-// by invoking the claude CLI. Each successfully parsed email creates
-// an activity and updates the existing log entry from "unrecognised" to "parsed".
+// via the Groq API. Each successfully parsed email creates an activity and
+// updates the existing log entry from "unrecognised" to "parsed".
 func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID) (*EnrichResult, error) {
 	conn, err := s.connRepo.FindByUserID(ctx, userID)
 	if err != nil {
@@ -854,20 +855,36 @@ func (s *GmailService) enrichUser(
 		// structured addresses. When there is no plain-text part, send the raw
 		// HTML directly — extractBody would return stripHTML(rawHTML), which
 		// would just double the payload size with redundant content.
+		//
+		// Truncate plainText to 5000 bytes before concatenating so the
+		// rawHTML (which carries map coordinate URLs) always fits within
+		// the 8000-byte limit applied by llmTruncate inside invoke().
 		rawHTML := extractPart(msg.Payload, "text/html")
 		plainText := extractPart(msg.Payload, "text/plain")
 		var fullContent string
 		if plainText != "" {
+			// Cap plain-text at 5000 bytes so rawHTML (map coord URLs) always fits
+			// within the 8000-byte limit applied by llmTruncate inside invoke().
+			if len(plainText) > 5000 {
+				plainText = plainText[:5000]
+			}
 			fullContent = plainText + "\n\n" + rawHTML
 		} else {
 			fullContent = rawHTML
 		}
 
 		ride, err := s.llmParser.ParseWithContext(ctx, subject, fullContent)
+		if errors.Is(err, parser.ErrUnrecognisedFormat) {
+			// LLM confirmed this is not a ride receipt — skip it, don't fail.
+			updateLog(entry.ID, domain.StatusSkipped, nil)
+			result.Skipped++
+			continue
+		}
 		if err != nil {
+			// Transient error (network, rate-limit, etc.) — leave as StatusUnrecognised
+			// so the next cron run can retry, matching how Gmail API fetch errors are handled.
 			log.Warn("gmail enrich: llm parse failed",
 				zap.String("msg_id", entry.MessageID), zap.Error(err))
-			updateLog(entry.ID, domain.StatusFailed, nil)
 			result.Failed++
 			continue
 		}
