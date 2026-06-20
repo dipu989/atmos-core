@@ -29,12 +29,12 @@ Fields to extract (use null for unknown values):
   "currency": "INR",
   "vehicle_type": "Bike|Auto|Cab|UberGo|RapidoBike or null",
   "provider": "uber|rapido|ola|etc",
-  "transport_mode": "car|bike|auto_rickshaw|taxi",
+  "transport_mode": "two_wheeler|cab|auto_rickshaw",
   "started_at": "2024-01-15T10:30:00Z or null"
 }
 
 Rules:
-- transport_mode must be one of: car, bike, auto_rickshaw, taxi
+- transport_mode must be one of: two_wheeler, cab, auto_rickshaw
 - currency defaults to "INR" for Indian receipts
 - started_at must be RFC3339 format or null
 - If this is NOT a ride receipt, return: {"not_a_receipt": true}
@@ -151,7 +151,7 @@ func (p *LLMParser) callWithRetry(ctx context.Context, subject, body string) (*P
 		}
 		delay *= 2
 	}
-	return nil, ErrUnrecognisedFormat
+	return nil, ErrUnrecognisedFormat // unreachable: loop always returns on last attempt
 }
 
 // call makes one Anthropic API request. Returns (ride, retryable, error).
@@ -242,15 +242,15 @@ func (p *LLMParser) call(ctx context.Context, subject, body string) (*ParsedRide
 
 func llmNormaliseMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "bike", "motorcycle":
-		return "bike"
+	case "bike", "motorcycle", "two_wheeler":
+		return "two_wheeler"
 	case "auto", "auto_rickshaw", "autorickshaw", "rickshaw":
 		return "auto_rickshaw"
 	case "car", "cab", "taxi":
-		return "car"
+		return "cab"
 	default:
 		if mode == "" {
-			return "car"
+			return "cab"
 		}
 		return strings.ToLower(mode)
 	}

@@ -510,7 +510,11 @@ func (s *GmailService) handleMessage(
 		// when the activity is still missing them. The HasRouteLabels check avoids
 		// a Gmail API fetch for the common case where addresses are already set.
 		if existingLog.ActivityID != nil {
-			if has, err := s.activitySvc.HasRouteLabels(ctx, *existingLog.ActivityID); err == nil && !has {
+			has, err := s.activitySvc.HasRouteLabels(ctx, *existingLog.ActivityID)
+			if err != nil {
+				logger.L().Warn("gmail: HasRouteLabels check failed, skipping backfill",
+					zap.Stringer("activity_id", *existingLog.ActivityID), zap.Error(err))
+			} else if !has {
 				s.tryBackfillAddresses(ctx, gmailSvc, userID, messageID, *existingLog.ActivityID, routingMap)
 			}
 		}
@@ -769,18 +773,17 @@ type EnrichResult struct {
 
 // AllEnrichResult summarises an EnrichUnrecognisedAll run.
 type AllEnrichResult struct {
-	TotalUsers int    `json:"total_users"`
-	Enriched   int    `json:"enriched"`
-	Failed     int    `json:"failed"`
-	Error      string `json:"error,omitempty"`
+	TotalUsers  int    `json:"total_users"`
+	Enriched    int    `json:"enriched"`
+	Failed      int    `json:"failed"`       // email-level parse/ingest failures
+	UsersFailed int    `json:"users_failed"` // users whose auth or DB setup failed
+	Error       string `json:"error,omitempty"`
 }
 
 // EnrichUnrecognised re-processes emails that previously failed regex parsing
 // by sending them to the Anthropic API. Each successfully parsed email creates
 // an activity and updates the existing log entry from "unrecognised" to "parsed".
 func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID) (*EnrichResult, error) {
-	log := logger.L()
-
 	conn, err := s.connRepo.FindByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -788,6 +791,30 @@ func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID)
 	if conn == nil {
 		return nil, ErrNotConnected
 	}
+
+	gmailSvc, err := s.gmailClient(ctx, conn)
+	if err != nil {
+		return nil, err // gmailClient wraps revoked-token errors as ErrNotConnected
+	}
+
+	routingMap, err := s.provRepo.BuildRoutingMap(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("build routing map: %w", err)
+	}
+
+	return s.enrichUser(ctx, userID, gmailSvc, routingMap)
+}
+
+// enrichUser processes the unrecognised queue for one user given an already-authenticated
+// Gmail client and a pre-built routing map. Splitting this from EnrichUnrecognised lets
+// EnrichUnrecognisedAll build the routing map once for all users.
+func (s *GmailService) enrichUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	gmailSvc *googleapi.Service,
+	routingMap repository.RoutingMap,
+) (*EnrichResult, error) {
+	log := logger.L()
 
 	unrecognised, err := s.logRepo.ListUnrecognised(ctx, userID, 50)
 	if err != nil {
@@ -797,16 +824,6 @@ func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID)
 	result := &EnrichResult{Total: len(unrecognised)}
 	if len(unrecognised) == 0 {
 		return result, nil
-	}
-
-	gmailSvc, err := s.gmailClient(ctx, conn)
-	if err != nil {
-		return nil, fmt.Errorf("gmail client: %w", err)
-	}
-
-	routingMap, err := s.provRepo.BuildRoutingMap(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("build routing map: %w", err)
 	}
 
 	// updateLog writes a status update using a context that is not bound to the
@@ -825,9 +842,11 @@ func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID)
 		msg, err := gmailSvc.Users.Messages.Get("me", entry.MessageID).
 			Format("full").Context(ctx).Do()
 		if err != nil {
+			// Don't mark StatusFailed on a fetch error — a token problem would
+			// poison every entry in the batch. Leave as StatusUnrecognised so
+			// the next cron run can retry once auth is restored.
 			log.Warn("gmail enrich: fetch message failed",
 				zap.String("msg_id", entry.MessageID), zap.Error(err))
-			updateLog(entry.ID, domain.StatusFailed, nil)
 			result.Failed++
 			continue
 		}
@@ -904,8 +923,9 @@ func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID)
 	return result, nil
 }
 
-// EnrichUnrecognisedAll runs EnrichUnrecognised for every connected user.
+// EnrichUnrecognisedAll runs enrichUser for every connected user.
 // Called by the worker cron and POST /internal/gmail/enrich-all.
+// The routing map is built once and shared across all users to avoid N redundant queries.
 func (s *GmailService) EnrichUnrecognisedAll(ctx context.Context) *AllEnrichResult {
 	log := logger.L()
 
@@ -915,13 +935,26 @@ func (s *GmailService) EnrichUnrecognisedAll(ctx context.Context) *AllEnrichResu
 		return &AllEnrichResult{Error: err.Error()}
 	}
 
+	routingMap, err := s.provRepo.BuildRoutingMap(ctx)
+	if err != nil {
+		log.Error("gmail enrich all: build routing map", zap.Error(err))
+		return &AllEnrichResult{TotalUsers: len(conns), Error: err.Error()}
+	}
+
 	res := &AllEnrichResult{TotalUsers: len(conns)}
-	for _, conn := range conns {
-		result, err := s.EnrichUnrecognised(ctx, conn.UserID)
+	for i := range conns {
+		gmailSvc, err := s.gmailClient(ctx, &conns[i])
+		if err != nil {
+			log.Warn("gmail enrich all: auth failed",
+				zap.Stringer("user_id", conns[i].UserID), zap.Error(err))
+			res.UsersFailed++
+			continue
+		}
+		result, err := s.enrichUser(ctx, conns[i].UserID, gmailSvc, routingMap)
 		if err != nil {
 			log.Warn("gmail enrich all: user failed",
-				zap.Stringer("user_id", conn.UserID), zap.Error(err))
-			res.Failed++
+				zap.Stringer("user_id", conns[i].UserID), zap.Error(err))
+			res.UsersFailed++
 			continue
 		}
 		res.Enriched += result.Enriched
@@ -931,7 +964,8 @@ func (s *GmailService) EnrichUnrecognisedAll(ctx context.Context) *AllEnrichResu
 	log.Info("gmail enrich all: complete",
 		zap.Int("total_users", res.TotalUsers),
 		zap.Int("enriched", res.Enriched),
-		zap.Int("failed", res.Failed),
+		zap.Int("emails_failed", res.Failed),
+		zap.Int("users_failed", res.UsersFailed),
 	)
 	return res
 }
@@ -1069,9 +1103,11 @@ func (s *GmailService) gmailClient(ctx context.Context, conn *domain.GmailConnec
 	ts := s.oauthCfg.TokenSource(ctx, stored)
 
 	// Token() triggers a refresh when the access token is expired.
+	// A refresh failure means the connection is broken (revoked grant), so we
+	// wrap as ErrNotConnected so all callers can surface a meaningful error.
 	fresh, err := ts.Token()
 	if err != nil {
-		return nil, fmt.Errorf("token refresh: %w", err)
+		return nil, fmt.Errorf("%w: token refresh: %v", ErrNotConnected, err)
 	}
 	if fresh.AccessToken != conn.AccessToken {
 		conn.AccessToken = fresh.AccessToken
