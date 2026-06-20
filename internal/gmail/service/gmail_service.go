@@ -68,14 +68,13 @@ type GmailService struct {
 }
 
 type Config struct {
-	ClientID        string
-	ClientSecret    string
-	RedirectURL     string
-	HMACSecret      string // JWT_ACCESS_SECRET is reused
-	BatchSize       int64  // 0 → defaultBatchSize
-	MapsAPIKey      string // optional; enables geocoding of pickup/drop addresses
-	AnthropicAPIKey string // ANTHROPIC_API_KEY — enables LLM fallback parsing
-	LLMModel        string // ANTHROPIC_MODEL — defaults to claude-haiku-4-5-20251001
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+	HMACSecret   string // JWT_ACCESS_SECRET is reused
+	BatchSize    int64  // 0 → defaultBatchSize
+	MapsAPIKey   string // optional; enables geocoding of pickup/drop addresses
+	ClaudeBin    string // CLAUDE_BIN — path to claude CLI binary (default: "claude")
 }
 
 func NewGmailService(
@@ -88,10 +87,6 @@ func NewGmailService(
 	batchSize := cfg.BatchSize
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
-	}
-	llmModel := cfg.LLMModel
-	if llmModel == "" {
-		llmModel = "claude-haiku-4-5-20251001"
 	}
 	return &GmailService{
 		oauthCfg: &oauth2.Config{
@@ -107,7 +102,7 @@ func NewGmailService(
 		activitySvc: activitySvc,
 		registry:    parser.NewRegistry(),
 		geocoder:    geocoder.New(cfg.MapsAPIKey),
-		llmParser:   parser.NewLLMParser(cfg.AnthropicAPIKey, llmModel, 3),
+		llmParser:   parser.NewLLMParser(cfg.ClaudeBin, 3),
 		hmacSecret:  []byte(cfg.HMACSecret),
 		batchSize:   batchSize,
 	}
@@ -622,7 +617,7 @@ func (s *GmailService) handleMessage(
 
 	// All candidates tried and none succeeded.
 	// When the LLM parser is configured, mark the email for async enrichment
-	// rather than a hard failure — the worker cron will retry via Anthropic.
+	// rather than a hard failure — the worker cron will retry via the claude CLI.
 	if s.llmParser.IsEnabled() {
 		return s.unrecognisedOutcome(userID, messageID, &candidates[0].Code, subject, snippet)
 	}
@@ -781,7 +776,7 @@ type AllEnrichResult struct {
 }
 
 // EnrichUnrecognised re-processes emails that previously failed regex parsing
-// by sending them to the Anthropic API. Each successfully parsed email creates
+// by invoking the claude CLI. Each successfully parsed email creates
 // an activity and updates the existing log entry from "unrecognised" to "parsed".
 func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID) (*EnrichResult, error) {
 	conn, err := s.connRepo.FindByUserID(ctx, userID)

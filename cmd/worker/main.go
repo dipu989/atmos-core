@@ -90,13 +90,12 @@ func main() {
 	notifSvc := notifservice.NewNotificationService(deviceRepo, fcmSender)
 	gmailSvc := gmailservice.NewGmailService(
 		gmailservice.Config{
-			ClientID:        cfg.Google.ClientID,
-			ClientSecret:    cfg.Google.ClientSecret,
-			RedirectURL:     cfg.Google.GmailRedirectURL,
-			HMACSecret:      cfg.JWT.AccessSecret,
-			MapsAPIKey:      cfg.Google.MapsAPIKey,
-			AnthropicAPIKey: cfg.Anthropic.APIKey,
-			LLMModel:        cfg.Anthropic.Model,
+			ClientID:     cfg.Google.ClientID,
+			ClientSecret: cfg.Google.ClientSecret,
+			RedirectURL:  cfg.Google.GmailRedirectURL,
+			HMACSecret:   cfg.JWT.AccessSecret,
+			MapsAPIKey:   cfg.Google.MapsAPIKey,
+			ClaudeBin:    cfg.ClaudeBin,
 		},
 		gmailConnRepo,
 		gmailLogRepo,

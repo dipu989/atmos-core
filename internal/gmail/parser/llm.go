@@ -5,17 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 )
 
-const (
-	anthropicAPIURL  = "https://api.anthropic.com/v1/messages"
-	anthropicVersion = "2023-06-01"
-	llmMaxRetries    = 3
-)
+const llmMaxRetries = 3
 
 var llmSystemPrompt = `You are a ride-receipt email parser. Extract ride information from the email and return ONLY a JSON object.
 
@@ -40,33 +35,39 @@ Rules:
 - If this is NOT a ride receipt, return: {"not_a_receipt": true}
 - Output ONLY the JSON object. No markdown, no explanation.`
 
-// LLMParser calls the Anthropic API to extract ride details from email bodies.
+// LLMParser invokes the `claude` CLI as a subprocess to extract ride details
+// from email bodies. Uses the claude login session already present on the host —
+// no separate API key or credits required.
 // It satisfies the Parser interface; TrySnippet always returns false because
-// the LLM needs the full body to be useful.
+// the CLI needs the full body to be useful.
 type LLMParser struct {
-	apiKey    string
-	model     string
+	bin       string // path to claude binary (default: "claude")
 	semaphore chan struct{}
-	client    *http.Client
 }
 
-// NewLLMParser creates an LLMParser. maxConcurrent caps parallel API calls.
-func NewLLMParser(apiKey, model string, maxConcurrent int) *LLMParser {
+// NewLLMParser creates an LLMParser. bin is the path to the claude binary
+// (empty string defaults to "claude" on PATH). maxConcurrent caps parallel
+// CLI invocations.
+func NewLLMParser(bin string, maxConcurrent int) *LLMParser {
+	if bin == "" {
+		bin = "claude"
+	}
 	if maxConcurrent <= 0 {
 		maxConcurrent = 3
 	}
 	return &LLMParser{
-		apiKey:    apiKey,
-		model:     model,
+		bin:       bin,
 		semaphore: make(chan struct{}, maxConcurrent),
-		client:    &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
-// IsEnabled reports whether an API key is configured.
-func (p *LLMParser) IsEnabled() bool { return p.apiKey != "" }
+// IsEnabled reports whether the claude binary is available on PATH.
+func (p *LLMParser) IsEnabled() bool {
+	_, err := exec.LookPath(p.bin)
+	return err == nil
+}
 
-// TrySnippet always returns false — LLM parsing requires the full body.
+// TrySnippet always returns false — CLI parsing requires the full body.
 func (p *LLMParser) TrySnippet(_, _ string) (*ParsedRide, bool) { return nil, false }
 
 // Parse satisfies the Parser interface using context.Background internally.
@@ -75,7 +76,7 @@ func (p *LLMParser) Parse(subject, body string) (*ParsedRide, error) {
 }
 
 // ParseWithContext is like Parse but respects the provided context for
-// cancellation and timeout during semaphore acquisition and HTTP calls.
+// cancellation and timeout during semaphore acquisition and CLI execution.
 func (p *LLMParser) ParseWithContext(ctx context.Context, subject, body string) (*ParsedRide, error) {
 	if !p.IsEnabled() {
 		return nil, ErrUnrecognisedFormat
@@ -89,29 +90,10 @@ func (p *LLMParser) ParseWithContext(ctx context.Context, subject, body string) 
 	}
 	defer func() { <-p.semaphore }()
 
-	return p.callWithRetry(ctx, subject, body)
+	return p.invokeWithRetry(ctx, subject, body)
 }
 
 // ── internal ────────────────────────────────────────────────────────────────
-
-type anthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system"`
-	Messages  []anthropicMessage `json:"messages"`
-}
-
-type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-}
 
 type llmRideJSON struct {
 	NotAReceipt     bool     `json:"not_a_receipt"`
@@ -127,7 +109,7 @@ type llmRideJSON struct {
 	StartedAt       *string  `json:"started_at"`
 }
 
-func (p *LLMParser) callWithRetry(ctx context.Context, subject, body string) (*ParsedRide, error) {
+func (p *LLMParser) invokeWithRetry(ctx context.Context, subject, body string) (*ParsedRide, error) {
 	delay := 2 * time.Second
 	for attempt := 0; attempt < llmMaxRetries; attempt++ {
 		select {
@@ -136,11 +118,11 @@ func (p *LLMParser) callWithRetry(ctx context.Context, subject, body string) (*P
 		default:
 		}
 
-		ride, retryable, err := p.call(ctx, subject, body)
+		ride, err := p.invoke(ctx, subject, body)
 		if err == nil {
 			return ride, nil
 		}
-		if !retryable || attempt == llmMaxRetries-1 {
+		if attempt == llmMaxRetries-1 {
 			return nil, err
 		}
 
@@ -154,58 +136,28 @@ func (p *LLMParser) callWithRetry(ctx context.Context, subject, body string) (*P
 	return nil, ErrUnrecognisedFormat // unreachable: loop always returns on last attempt
 }
 
-// call makes one Anthropic API request. Returns (ride, retryable, error).
-func (p *LLMParser) call(ctx context.Context, subject, body string) (*ParsedRide, bool, error) {
-	content := fmt.Sprintf("Subject: %s\n\n%s", subject, llmTruncate(body, 8000))
+// invoke runs the claude CLI once and parses its JSON output.
+func (p *LLMParser) invoke(ctx context.Context, subject, body string) (*ParsedRide, error) {
+	prompt := fmt.Sprintf("%s\n\nEmail to parse:\nSubject: %s\n\n%s",
+		llmSystemPrompt, subject, llmTruncate(body, 8000))
 
-	payload := anthropicRequest{
-		Model:     p.model,
-		MaxTokens: 512,
-		System:    llmSystemPrompt,
-		Messages:  []anthropicMessage{{Role: "user", Content: content}},
-	}
-	reqBytes, _ := json.Marshal(payload)
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, p.bin, "-p", prompt, "--output-format", "text")
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, anthropicAPIURL, bytes.NewReader(reqBytes))
-	if err != nil {
-		return nil, false, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("x-api-key", p.apiKey)
-	req.Header.Set("anthropic-version", anthropicVersion)
-	req.Header.Set("content-type", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, true, fmt.Errorf("http: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, true, fmt.Errorf("rate limited (429)")
-	}
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, false, fmt.Errorf("anthropic %d: %s", resp.StatusCode, llmTruncate(string(body), 200))
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("claude cli: %w (stderr: %s)", err, llmTruncate(stderr.String(), 200))
 	}
 
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, false, fmt.Errorf("read response: %w", err)
-	}
-
-	var apiResp anthropicResponse
-	if err := json.Unmarshal(raw, &apiResp); err != nil || len(apiResp.Content) == 0 {
-		return nil, false, ErrUnrecognisedFormat
-	}
-
-	text := llmStripFence(strings.TrimSpace(apiResp.Content[0].Text))
+	text := llmStripFence(strings.TrimSpace(stdout.String()))
 
 	var data llmRideJSON
 	if err := json.Unmarshal([]byte(text), &data); err != nil {
-		return nil, false, fmt.Errorf("parse llm json: %w", err)
+		return nil, fmt.Errorf("parse cli json: %w (output: %s)", err, llmTruncate(text, 200))
 	}
 	if data.NotAReceipt {
-		return nil, false, ErrUnrecognisedFormat
+		return nil, ErrUnrecognisedFormat
 	}
 
 	ride := &ParsedRide{
@@ -237,7 +189,7 @@ func (p *LLMParser) call(ctx context.Context, subject, body string) (*ParsedRide
 		}
 	}
 
-	return ride, false, nil
+	return ride, nil
 }
 
 func llmNormaliseMode(mode string) string {
