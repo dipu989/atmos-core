@@ -126,12 +126,38 @@ func (f *flexFloat64) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// flexInt accepts both JSON number and quoted-string from the LLM
+// (e.g. Groq sometimes returns "37" instead of 37).
+type flexInt struct{ v *int }
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(b, &n); err == nil {
+		f.v = &n
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return err
+	}
+	n = int(parsed)
+	f.v = &n
+	return nil
+}
+
 type llmRideJSON struct {
 	NotAReceipt     bool        `json:"not_a_receipt"`
 	PickupAddress   *string     `json:"pickup_address"`
 	DropAddress     *string     `json:"drop_address"`
 	DistanceKM      flexFloat64 `json:"distance_km"`
-	DurationMinutes *int        `json:"duration_minutes"`
+	DurationMinutes flexInt     `json:"duration_minutes"`
 	FareAmount      flexFloat64 `json:"fare_amount"`
 	Currency        string      `json:"currency"`
 	VehicleType     *string     `json:"vehicle_type"`
@@ -267,7 +293,7 @@ func (p *LLMParser) invoke(ctx context.Context, subject, body string) (*ParsedRi
 	ride := &ParsedRide{
 		TransportMode:   llmNormaliseMode(data.TransportMode),
 		VehicleType:     data.VehicleType,
-		DurationMinutes: data.DurationMinutes,
+		DurationMinutes: data.DurationMinutes.v,
 		FareAmount:      data.FareAmount.v,
 		Currency:        data.Currency,
 		Metadata: map[string]any{
