@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const llmMaxRetries = 3
@@ -118,7 +119,16 @@ func (f *flexFloat64) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	// Strip leading currency symbols (₹, $, €, etc.) before parsing.
+	s = strings.TrimSpace(s)
+	s = strings.TrimLeftFunc(s, func(r rune) bool {
+		return !unicode.IsDigit(r) && r != '-'
+	})
+	// Empty after stripping (e.g. "₹" with no digits) — treat as null.
+	if s == "" {
+		return nil
+	}
+	n, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return err
 	}
@@ -143,11 +153,13 @@ func (f *flexInt) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	parsed, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	// Use Atoi so non-integer strings (e.g. "1e3", "37.9") are rejected
+	// rather than silently truncated, which would corrupt DurationMinutes
+	// and cause a wildly wrong EndedAt to be stored.
+	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
 		return err
 	}
-	n = int(parsed)
 	f.v = &n
 	return nil
 }

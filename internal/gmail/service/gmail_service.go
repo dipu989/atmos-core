@@ -882,16 +882,20 @@ func (s *GmailService) enrichUser(
 		// the 8000-byte limit applied by llmTruncate inside invoke().
 		rawHTML := extractPart(msg.Payload, "text/html")
 		plainText := extractPart(msg.Payload, "text/plain")
+		// Strip style/script blocks from the HTML before appending — HTML-only
+		// emails (e.g. Uber) embed ~3000 chars of CSS that would consume the
+		// entire token budget before any visible content is reached.
+		strippedHTML := stripHTML(rawHTML)
 		var fullContent string
 		if plainText != "" {
-			// Cap plain-text at 5000 bytes so rawHTML (map coord URLs) always fits
+			// Cap plain-text at 5000 bytes so strippedHTML always fits
 			// within the 8000-byte limit applied by llmTruncate inside invoke().
 			if len(plainText) > 5000 {
 				plainText = plainText[:5000]
 			}
-			fullContent = plainText + "\n\n" + rawHTML
+			fullContent = plainText + "\n\n" + strippedHTML
 		} else {
-			fullContent = rawHTML
+			fullContent = strippedHTML
 		}
 
 		ride, err := s.llmParser.ParseWithContext(ctx, subject, fullContent)
