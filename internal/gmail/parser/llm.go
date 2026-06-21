@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -100,18 +101,69 @@ func (p *LLMParser) ParseWithContext(ctx context.Context, subject, body string) 
 
 // ── internal ────────────────────────────────────────────────────────────────
 
+// flexFloat64 accepts both JSON number and quoted-string from the LLM
+// (e.g. Groq sometimes returns "21.89" instead of 21.89).
+type flexFloat64 struct{ v *float64 }
+
+func (f *flexFloat64) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	var n float64
+	if err := json.Unmarshal(b, &n); err == nil {
+		f.v = &n
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return err
+	}
+	f.v = &n
+	return nil
+}
+
+// flexInt accepts both JSON number and quoted-string from the LLM
+// (e.g. Groq sometimes returns "37" instead of 37).
+type flexInt struct{ v *int }
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(b, &n); err == nil {
+		f.v = &n
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return err
+	}
+	n = int(parsed)
+	f.v = &n
+	return nil
+}
+
 type llmRideJSON struct {
-	NotAReceipt     bool     `json:"not_a_receipt"`
-	PickupAddress   *string  `json:"pickup_address"`
-	DropAddress     *string  `json:"drop_address"`
-	DistanceKM      *float64 `json:"distance_km"`
-	DurationMinutes *int     `json:"duration_minutes"`
-	FareAmount      *float64 `json:"fare_amount"`
-	Currency        string   `json:"currency"`
-	VehicleType     *string  `json:"vehicle_type"`
-	Provider        string   `json:"provider"`
-	TransportMode   string   `json:"transport_mode"`
-	StartedAt       *string  `json:"started_at"`
+	NotAReceipt     bool        `json:"not_a_receipt"`
+	PickupAddress   *string     `json:"pickup_address"`
+	DropAddress     *string     `json:"drop_address"`
+	DistanceKM      flexFloat64 `json:"distance_km"`
+	DurationMinutes flexInt     `json:"duration_minutes"`
+	FareAmount      flexFloat64 `json:"fare_amount"`
+	Currency        string      `json:"currency"`
+	VehicleType     *string     `json:"vehicle_type"`
+	Provider        string      `json:"provider"`
+	TransportMode   string      `json:"transport_mode"`
+	StartedAt       *string     `json:"started_at"`
 }
 
 // groqFatalError wraps a non-retryable Groq API response (4xx except 429).
@@ -241,16 +293,16 @@ func (p *LLMParser) invoke(ctx context.Context, subject, body string) (*ParsedRi
 	ride := &ParsedRide{
 		TransportMode:   llmNormaliseMode(data.TransportMode),
 		VehicleType:     data.VehicleType,
-		DurationMinutes: data.DurationMinutes,
-		FareAmount:      data.FareAmount,
+		DurationMinutes: data.DurationMinutes.v,
+		FareAmount:      data.FareAmount.v,
 		Currency:        data.Currency,
 		Metadata: map[string]any{
 			"provider": data.Provider,
 			"source":   "llm",
 		},
 	}
-	if data.DistanceKM != nil {
-		ride.DistanceKM = *data.DistanceKM
+	if data.DistanceKM.v != nil {
+		ride.DistanceKM = *data.DistanceKM.v
 	}
 	if data.PickupAddress != nil {
 		ride.PickupAddress = *data.PickupAddress
