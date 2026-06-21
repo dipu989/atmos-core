@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const llmMaxRetries = 3
@@ -36,6 +37,7 @@ Replace each null with the value found in the email. Leave as null if the email 
 Rules:
 - transport_mode must be one of: "two_wheeler", "cab", "auto_rickshaw" (infer from vehicle)
 - currency defaults to "INR" for Indian receipts
+- fare_amount must be a plain number with no currency symbol (e.g. 235.54, not ₹235.54)
 - started_at must be RFC3339 format (e.g. "2024-01-15T10:30:00Z") or null
 - If this is NOT a ride receipt email, return exactly: {"not_a_receipt": true}
 - Output ONLY the JSON object. No markdown, no explanation.`
@@ -118,7 +120,12 @@ func (f *flexFloat64) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	// Strip leading currency symbols (₹, $, €, etc.) before parsing.
+	s = strings.TrimSpace(s)
+	s = strings.TrimLeftFunc(s, func(r rune) bool {
+		return !unicode.IsDigit(r) && r != '-'
+	})
+	n, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return err
 	}

@@ -15,6 +15,8 @@ func TestFlexFloat64(t *testing.T) {
 		{`21.89`, ptr64(21.89)},
 		{`"21.89"`, ptr64(21.89)},
 		{`"13.63"`, ptr64(13.63)},
+		{`"₹173.76"`, ptr64(173.76)}, // Groq sometimes includes currency symbol
+		{`"$235.54"`, ptr64(235.54)},
 		{`null`, nil},
 	}
 	for _, c := range cases {
