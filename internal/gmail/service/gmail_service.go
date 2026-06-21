@@ -103,7 +103,7 @@ func NewGmailService(
 		activitySvc: activitySvc,
 		registry:    parser.NewRegistry(),
 		geocoder:    geocoder.New(cfg.MapsAPIKey),
-		llmParser:   parser.NewLLMParser(cfg.GroqAPIKey, cfg.GroqModel, 3),
+		llmParser:   parser.NewLLMParser(cfg.GroqAPIKey, cfg.GroqModel, 1),
 		hmacSecret:  []byte(cfg.HMACSecret),
 		batchSize:   batchSize,
 	}
