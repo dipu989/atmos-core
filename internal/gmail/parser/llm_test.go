@@ -9,19 +9,29 @@ import (
 // quoted-string forms, which Groq returns interchangeably.
 func TestFlexFloat64(t *testing.T) {
 	cases := []struct {
-		input string
-		want  *float64
+		input   string
+		want    *float64
+		wantErr bool
 	}{
-		{`21.89`, ptr64(21.89)},
-		{`"21.89"`, ptr64(21.89)},
-		{`"13.63"`, ptr64(13.63)},
-		{`"₹173.76"`, ptr64(173.76)}, // Groq sometimes includes currency symbol
-		{`"$235.54"`, ptr64(235.54)},
-		{`null`, nil},
+		{`21.89`, ptr64(21.89), false},
+		{`"21.89"`, ptr64(21.89), false},
+		{`"13.63"`, ptr64(13.63), false},
+		{`"₹173.76"`, ptr64(173.76), false}, // Groq sometimes includes currency symbol
+		{`"$235.54"`, ptr64(235.54), false},
+		{`"₹"`, nil, false}, // symbol only — must return nil, not error
+		{`""`, nil, false},  // empty string — must return nil, not error
+		{`null`, nil, false},
 	}
 	for _, c := range cases {
 		var f flexFloat64
-		if err := json.Unmarshal([]byte(c.input), &f); err != nil {
+		err := json.Unmarshal([]byte(c.input), &f)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("input %q: expected error, got nil", c.input)
+			}
+			continue
+		}
+		if err != nil {
 			t.Fatalf("input %q: unexpected error: %v", c.input, err)
 		}
 		if c.want == nil {
@@ -41,16 +51,26 @@ func TestFlexFloat64(t *testing.T) {
 // TestFlexInt verifies that flexInt accepts both JSON number and quoted-string.
 func TestFlexInt(t *testing.T) {
 	cases := []struct {
-		input string
-		want  *int
+		input   string
+		want    *int
+		wantErr bool
 	}{
-		{`37`, ptrInt(37)},
-		{`"37"`, ptrInt(37)},
-		{`null`, nil},
+		{`37`, ptrInt(37), false},
+		{`"37"`, ptrInt(37), false},
+		{`null`, nil, false},
+		{`"1e3"`, nil, true},  // scientific notation must be rejected, not silently become 1000
+		{`"37.9"`, nil, true}, // fractional string must be rejected, not silently truncated to 37
 	}
 	for _, c := range cases {
 		var f flexInt
-		if err := json.Unmarshal([]byte(c.input), &f); err != nil {
+		err := json.Unmarshal([]byte(c.input), &f)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("input %q: expected error, got nil", c.input)
+			}
+			continue
+		}
+		if err != nil {
 			t.Fatalf("input %q: unexpected error: %v", c.input, err)
 		}
 		if c.want == nil {
