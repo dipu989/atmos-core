@@ -1270,14 +1270,21 @@ func extractPart(part *googleapi.MessagePart, mime string) string {
 }
 
 var (
-	reHTMLTag    = regexp.MustCompile(`<[^>]+>`)
-	reHTMLNbsp   = regexp.MustCompile(`&nbsp;`)
-	reHTMLAmp    = regexp.MustCompile(`&amp;`)
-	reBlankLines = regexp.MustCompile(`\n{3,}`)
+	reHTMLTag     = regexp.MustCompile(`<[^>]+>`)
+	reHTMLNbsp    = regexp.MustCompile(`&nbsp;`)
+	reHTMLAmp     = regexp.MustCompile(`&amp;`)
+	reBlankLines  = regexp.MustCompile(`\n{3,}`)
+	reStyleBlock  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	reScriptBlock = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
 )
 
 func stripHTML(html string) string {
-	s := reHTMLNbsp.ReplaceAllString(html, " ")
+	// Remove style/script blocks first — their content is not visible text and
+	// would otherwise consume the entire token budget (Uber emails have ~3000
+	// chars of CSS that precedes any actual email content).
+	s := reStyleBlock.ReplaceAllString(html, "")
+	s = reScriptBlock.ReplaceAllString(s, "")
+	s = reHTMLNbsp.ReplaceAllString(s, " ")
 	s = reHTMLAmp.ReplaceAllString(s, "&")
 	s = reHTMLTag.ReplaceAllString(s, " ")
 	s = reBlankLines.ReplaceAllString(s, "\n\n")
