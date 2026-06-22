@@ -18,12 +18,14 @@ func NewInsightHandler(svc *service.InsightService) *InsightHandler {
 
 // ListInsights godoc
 // @Summary     List insights
-// @Description Returns a paginated list of insights for the authenticated user
+// @Description Returns a paginated list of insights for the authenticated user,
+// @Description filtered to insights whose period overlaps the requested window.
 // @Tags        insights
 // @Produce     json
 // @Param       unread query    bool   false "Return only unread insights"
 // @Param       limit  query    int    false "Page size (1-50, default 20)"
 // @Param       offset query    int    false "Offset for pagination"
+// @Param       period query    string false "Filter window: week|month|year (default week)"
 // @Success     200    {object} dto.InsightsPage
 // @Failure     401    {object} map[string]interface{}
 // @Failure     500    {object} map[string]interface{}
@@ -34,8 +36,9 @@ func (h *InsightHandler) ListInsights(c *fiber.Ctx) error {
 	onlyUnread := c.QueryBool("unread", false)
 	limit := c.QueryInt("limit", 20)
 	offset := c.QueryInt("offset", 0)
+	period := c.Query("period", "week")
 
-	page, err := h.svc.ListInsights(c.Context(), userID, onlyUnread, limit, offset)
+	page, err := h.svc.ListInsights(c.Context(), userID, onlyUnread, limit, offset, period)
 	if err != nil {
 		return response.InternalError(c, "failed to fetch insights")
 	}
