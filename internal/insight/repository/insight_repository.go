@@ -29,9 +29,10 @@ func (r *InsightRepository) ExistsForPeriod(ctx context.Context, userID uuid.UUI
 	return count > 0, err
 }
 
-func (r *InsightRepository) ListForUser(ctx context.Context, userID uuid.UUID, onlyUnread bool, limit, offset int) ([]domain.Insight, error) {
+func (r *InsightRepository) ListForUser(ctx context.Context, userID uuid.UUID, onlyUnread bool, limit, offset int, from, to time.Time) ([]domain.Insight, error) {
 	var insights []domain.Insight
-	q := r.db.WithContext(ctx).Where("user_id = ?", userID)
+	q := r.db.WithContext(ctx).Where("user_id = ?", userID).
+		Where("period_start <= ? AND period_end >= ?", to.Format("2006-01-02"), from.Format("2006-01-02"))
 	if onlyUnread {
 		q = q.Where("is_read = FALSE")
 	}
@@ -54,9 +55,10 @@ func (r *InsightRepository) FindByID(ctx context.Context, id, userID uuid.UUID) 
 	return &insight, nil
 }
 
-func (r *InsightRepository) CountForUser(ctx context.Context, userID uuid.UUID, onlyUnread bool) (int64, error) {
+func (r *InsightRepository) CountForUser(ctx context.Context, userID uuid.UUID, onlyUnread bool, from, to time.Time) (int64, error) {
 	var count int64
-	q := r.db.WithContext(ctx).Model(&domain.Insight{}).Where("user_id = ?", userID)
+	q := r.db.WithContext(ctx).Model(&domain.Insight{}).Where("user_id = ?", userID).
+		Where("period_start <= ? AND period_end >= ?", to.Format("2006-01-02"), from.Format("2006-01-02"))
 	if onlyUnread {
 		q = q.Where("is_read = FALSE")
 	}
