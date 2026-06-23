@@ -37,10 +37,41 @@ type UpdateActivityRequest struct {
 	StartedAt       *time.Time `json:"started_at"`
 }
 
-// ActivitiesPage wraps a paginated list of activities.
+// ActivitiesPage wraps a paginated list of activities. Deliberately omits
+// per-item ImpactContext — computing it requires an extra alternative-factor
+// lookup per activity (see EmissionService.ComputeImpactContext), which is
+// only worth paying on the single-activity detail view, not for every row
+// of a list/export response. Clients fetch GET /activities/:id for impact data.
 type ActivitiesPage struct {
 	Activities []domain.Activity `json:"activities"`
 	Total      int64             `json:"total"`
 	Limit      int               `json:"limit"`
 	Offset     int               `json:"offset"`
+}
+
+// ImpactContext translates an activity's kg CO2e into relatable comparisons.
+// TreesNeededToOffset, LedHoursEquivalent, and GlobalAveragePct are derived
+// from published reference figures (EPA, Our World in Data, CEA) that vary by
+// region and climate — Approximate is always true and clients must surface
+// that as a "global approximation" disclosure, not a precise measurement.
+type ImpactContext struct {
+	TreesNeededToOffset int  `json:"trees_needed_to_offset"`
+	LedHoursEquivalent  int  `json:"led_hours_equivalent"`
+	GlobalAveragePct    int  `json:"global_average_pct"`
+	Approximate         bool `json:"approximate"`
+
+	// AlternativeMode is the greenest readily-available substitute transport
+	// mode, omitted when the activity's mode is already zero-emission or no
+	// alternative is actually greener for this trip's distance.
+	AlternativeMode   *domain.TransportMode `json:"alternative_mode,omitempty"`
+	AlternativeKgCO2e *float64              `json:"alternative_kg_co2e,omitempty"`
+	SavingsKgCO2e     *float64              `json:"savings_kg_co2e,omitempty"`
+	SavingsPct        *int                  `json:"savings_pct,omitempty"`
+}
+
+// ActivityDetailResponse wraps a single activity with its derived impact
+// context. Used by GET /activities/:id.
+type ActivityDetailResponse struct {
+	domain.Activity
+	Impact ImpactContext `json:"impact"`
 }

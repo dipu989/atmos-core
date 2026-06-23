@@ -186,7 +186,7 @@ func main() {
 	identityH := idhandler.NewIdentityHandler(identitySvc)
 	apiKeyH := apikeyhandler.NewAPIKeyHandler(apikeyservice.NewAPIKeyService(apiKeyRepo))
 	deviceH := devhandler.NewDeviceHandler(deviceSvc)
-	activityH := acthandler.NewActivityHandler(activitySvc)
+	activityH := acthandler.NewActivityHandler(activitySvc, emissionSvc)
 	timelineH := timelinehandler.NewTimelineHandler(timelineSvc)
 	insightH := insighthandler.NewInsightHandler(insightSvc)
 	gmailH := gmailhandler.NewGmailHandler(gmailSvc)

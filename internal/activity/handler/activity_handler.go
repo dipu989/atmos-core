@@ -11,6 +11,7 @@ import (
 	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
 	"github.com/dipu/atmos-core/internal/activity/dto"
 	"github.com/dipu/atmos-core/internal/activity/service"
+	emiservice "github.com/dipu/atmos-core/internal/emission/service"
 	"github.com/dipu/atmos-core/platform/middleware"
 	"github.com/dipu/atmos-core/platform/response"
 	"github.com/dipu/atmos-core/platform/validator"
@@ -19,11 +20,12 @@ import (
 )
 
 type ActivityHandler struct {
-	svc *service.ActivityService
+	svc         *service.ActivityService
+	emissionSvc *emiservice.EmissionService
 }
 
-func NewActivityHandler(svc *service.ActivityService) *ActivityHandler {
-	return &ActivityHandler{svc: svc}
+func NewActivityHandler(svc *service.ActivityService, emissionSvc *emiservice.EmissionService) *ActivityHandler {
+	return &ActivityHandler{svc: svc, emissionSvc: emissionSvc}
 }
 
 // Ingest godoc
@@ -85,12 +87,14 @@ func (h *ActivityHandler) Ingest(c *fiber.Ctx) error {
 
 // GetActivity godoc
 // @Summary     Get an activity
-// @Description Returns a single activity by ID (must belong to the authenticated user)
+// @Description Returns a single activity by ID (must belong to the authenticated user),
+// @Description including a server-computed impact context (trees/LED-hours/global-%
+// @Description comparisons and a greener-alternative suggestion where one exists).
 // @Tags        activities
 // @Produce     json
 // @Security    BearerAuth
 // @Param       id  path     string true "Activity UUID"
-// @Success     200 {object} domain.Activity
+// @Success     200 {object} dto.ActivityDetailResponse
 // @Failure     400 {object} map[string]interface{}
 // @Failure     404 {object} map[string]interface{}
 // @Router      /activities/{id} [get]
@@ -101,10 +105,11 @@ func (h *ActivityHandler) GetActivity(c *fiber.Ctx) error {
 	}
 	userID := middleware.CurrentUserID(c)
 	activity, err := h.svc.GetActivity(c.Context(), id, userID)
-	if err != nil {
+	if err != nil || activity == nil {
 		return response.NotFound(c, "activity not found")
 	}
-	return response.OK(c, activity)
+	impact := h.emissionSvc.ComputeImpactContext(c.Context(), activity)
+	return response.OK(c, dto.ActivityDetailResponse{Activity: *activity, Impact: impact})
 }
 
 // ListActivities godoc
