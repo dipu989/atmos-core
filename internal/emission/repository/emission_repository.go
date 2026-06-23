@@ -38,6 +38,27 @@ func (r *EmissionRepository) FindByActivityID(ctx context.Context, activityID uu
 	return &e, nil
 }
 
+// FindFactorRegionByActivityID returns the region of the emission factor that
+// was actually used to calculate the given activity's emission, in a single
+// joined query — used to pin alternative-mode comparisons to the same region
+// rather than re-resolving the user's current preference.
+func (r *EmissionRepository) FindFactorRegionByActivityID(ctx context.Context, activityID uuid.UUID) (string, error) {
+	var region string
+	err := r.db.WithContext(ctx).
+		Table("emissions").
+		Joins("JOIN emission_factors ON emission_factors.id = emissions.emission_factor_id").
+		Where("emissions.activity_id = ?", activityID).
+		Select("emission_factors.region").
+		Scan(&region).Error
+	if err != nil {
+		return "", err
+	}
+	if region == "" {
+		return "", gorm.ErrRecordNotFound
+	}
+	return region, nil
+}
+
 // ResolveFactor finds the best-matching emission factor using specificity priority.
 // Waterfall: fuel-type-specific candidates first (when fuelType is non-nil),
 // then canonical (no fuel type), falling back through region → global.
