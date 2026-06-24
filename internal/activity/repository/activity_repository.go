@@ -155,6 +155,46 @@ func (r *ActivityRepository) BackfillRouteLabels(ctx context.Context, id uuid.UU
 		Updates(updates).Error
 }
 
+// FindNeedingDisplayBackfill returns up to limit activities, system-wide and
+// oldest first, that have coordinates but are still missing a display
+// address. Used by a worker cron sweep (BackfillDisplayAddressSweep) — the
+// WHERE clause naturally excludes rows as they get backfilled, so repeated
+// calls converge without needing a separate cursor.
+func (r *ActivityRepository) FindNeedingDisplayBackfill(ctx context.Context, limit int) ([]domain.Activity, error) {
+	var activities []domain.Activity
+	err := r.db.WithContext(ctx).
+		Where(
+			"(display_origin IS NULL AND origin_lat IS NOT NULL AND origin_lng IS NOT NULL) OR " +
+				"(display_destination IS NULL AND dest_lat IS NOT NULL AND dest_lng IS NOT NULL)",
+		).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&activities).Error
+	return activities, err
+}
+
+// BackfillDisplayAddress sets display_origin and/or display_destination on an
+// activity only when each is currently NULL. Used by BackfillDisplayAddressSweep
+// to self-heal historical rows without overwriting a value set since the row
+// was last loaded.
+func (r *ActivityRepository) BackfillDisplayAddress(ctx context.Context, id uuid.UUID, displayOrigin, displayDestination *string) error {
+	if displayOrigin != nil {
+		if err := r.db.WithContext(ctx).Model(&domain.Activity{}).
+			Where("id = ? AND display_origin IS NULL", id).
+			Update("display_origin", *displayOrigin).Error; err != nil {
+			return err
+		}
+	}
+	if displayDestination != nil {
+		if err := r.db.WithContext(ctx).Model(&domain.Activity{}).
+			Where("id = ? AND display_destination IS NULL", id).
+			Update("display_destination", *displayDestination).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FindCandidatesInWindow returns activities for a user that overlap a given time window.
 // Used by the TripMatcher to find dedup candidates. The window is expanded by bufferMinutes
 // on each side to account for GPS start-time jitter.
@@ -178,14 +218,16 @@ func (r *ActivityRepository) FindCandidatesInWindow(ctx context.Context, userID 
 
 // EnrichReceiptInput carries the receipt fields merged into an existing GPS activity.
 type EnrichReceiptInput struct {
-	ReceiptID       string
-	Provider        string
-	Origin          string
-	Destination     string
-	FareAmount      *float64
-	FareCurrency    *string
-	DistanceKM      *float64
-	DurationMinutes *int
+	ReceiptID          string
+	Provider           string
+	Origin             string
+	Destination        string
+	DisplayOrigin      *string
+	DisplayDestination *string
+	FareAmount         *float64
+	FareCurrency       *string
+	DistanceKM         *float64
+	DurationMinutes    *int
 	// Coords are only applied when the existing activity has nil values for them.
 	OriginLat *float64
 	OriginLng *float64
@@ -214,6 +256,12 @@ func (r *ActivityRepository) EnrichFromReceipt(ctx context.Context, id uuid.UUID
 	}
 	if input.Destination != "" {
 		updates["destination"] = input.Destination
+	}
+	if input.DisplayOrigin != nil {
+		updates["display_origin"] = *input.DisplayOrigin
+	}
+	if input.DisplayDestination != nil {
+		updates["display_destination"] = *input.DisplayDestination
 	}
 	if input.FareAmount != nil {
 		updates["fare_amount"] = *input.FareAmount

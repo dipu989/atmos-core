@@ -11,19 +11,23 @@ import (
 	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
 	"github.com/dipu/atmos-core/internal/activity/repository"
 	emidomain "github.com/dipu/atmos-core/internal/emission/domain"
+	"github.com/dipu/atmos-core/internal/shortaddress"
 	"github.com/dipu/atmos-core/internal/tripmatcher"
 	"github.com/dipu/atmos-core/platform/eventbus"
+	"github.com/dipu/atmos-core/platform/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type ActivityService struct {
-	repo *repository.ActivityRepository
-	bus  eventbus.Bus
+	repo      *repository.ActivityRepository
+	bus       eventbus.Bus
+	shortAddr shortaddress.Resolver
 }
 
-func NewActivityService(repo *repository.ActivityRepository, bus eventbus.Bus) *ActivityService {
-	return &ActivityService{repo: repo, bus: bus}
+func NewActivityService(repo *repository.ActivityRepository, bus eventbus.Bus, shortAddr shortaddress.Resolver) *ActivityService {
+	return &ActivityService{repo: repo, bus: bus, shortAddr: shortAddr}
 }
 
 type IngestInput struct {
@@ -43,15 +47,17 @@ type IngestInput struct {
 	UserTimezone    string
 	IdempotencyKey  string
 	// Dedup fields
-	Origin       *string
-	Destination  *string
-	OriginLat    *float64
-	OriginLng    *float64
-	DestLat      *float64
-	DestLng      *float64
-	ReceiptID    *string
-	FareAmount   *float64
-	FareCurrency *string
+	Origin             *string
+	Destination        *string
+	DisplayOrigin      *string
+	DisplayDestination *string
+	OriginLat          *float64
+	OriginLng          *float64
+	DestLat            *float64
+	DestLng            *float64
+	ReceiptID          *string
+	FareAmount         *float64
+	FareCurrency       *string
 }
 
 func (s *ActivityService) Ingest(ctx context.Context, input IngestInput) (*actdomain.Activity, error) {
@@ -279,32 +285,34 @@ func (s *ActivityService) createActivity(ctx context.Context, input IngestInput,
 		metadata = actdomain.RawMetadata{}
 	}
 	activity := &actdomain.Activity{
-		ID:              id,
-		UserID:          input.UserID,
-		DeviceID:        input.DeviceID,
-		ActivityType:    input.ActivityType,
-		TransportMode:   input.TransportMode,
-		DistanceKM:      input.DistanceKM,
-		EnergyKWH:       input.EnergyKWH,
-		DurationMinutes: input.DurationMinutes,
-		Source:          input.Source,
-		Provider:        input.Provider,
-		RawMetadata:     metadata,
-		StartedAt:       input.StartedAt,
-		EndedAt:         input.EndedAt,
-		DateLocal:       dateLocal,
-		IdempotencyKey:  key,
-		Status:          actdomain.StatusPending,
-		Origin:          input.Origin,
-		Destination:     input.Destination,
-		OriginLat:       input.OriginLat,
-		OriginLng:       input.OriginLng,
-		DestLat:         input.DestLat,
-		DestLng:         input.DestLng,
-		ReceiptID:       input.ReceiptID,
-		FareAmount:      input.FareAmount,
-		FareCurrency:    input.FareCurrency,
-		MatchConfidence: matchConfidence,
+		ID:                 id,
+		UserID:             input.UserID,
+		DeviceID:           input.DeviceID,
+		ActivityType:       input.ActivityType,
+		TransportMode:      input.TransportMode,
+		DistanceKM:         input.DistanceKM,
+		EnergyKWH:          input.EnergyKWH,
+		DurationMinutes:    input.DurationMinutes,
+		Source:             input.Source,
+		Provider:           input.Provider,
+		RawMetadata:        metadata,
+		StartedAt:          input.StartedAt,
+		EndedAt:            input.EndedAt,
+		DateLocal:          dateLocal,
+		IdempotencyKey:     key,
+		Status:             actdomain.StatusPending,
+		Origin:             input.Origin,
+		Destination:        input.Destination,
+		DisplayOrigin:      input.DisplayOrigin,
+		DisplayDestination: input.DisplayDestination,
+		OriginLat:          input.OriginLat,
+		OriginLng:          input.OriginLng,
+		DestLat:            input.DestLat,
+		DestLng:            input.DestLng,
+		ReceiptID:          input.ReceiptID,
+		FareAmount:         input.FareAmount,
+		FareCurrency:       input.FareCurrency,
+		MatchConfidence:    matchConfidence,
 	}
 	if err := s.repo.Create(ctx, activity); err != nil {
 		return nil, err
@@ -388,6 +396,8 @@ func buildEnrichInput(input IngestInput, gps actdomain.Activity, confidence floa
 	if input.Destination != nil {
 		e.Destination = *input.Destination
 	}
+	e.DisplayOrigin = input.DisplayOrigin
+	e.DisplayDestination = input.DisplayDestination
 	// Only copy receipt coords into GPS activity when the GPS row has no value for that column.
 	// Each column is guarded independently — a partial GPS fix (Lat set, Lng nil) must not
 	// block the receipt from filling in the missing Lng.
@@ -676,6 +686,45 @@ func (s *ActivityService) ListActivities(ctx context.Context, userID uuid.UUID, 
 	}
 	activities, err := s.repo.ListByUser(ctx, userID, from, to, limit, offset)
 	return activities, total, err
+}
+
+// BackfillDisplayAddressSweep resolves and persists display addresses for up
+// to limit historical activities (system-wide, oldest first) that have
+// coordinates but no display address yet. Intended to run on a worker cron,
+// not on a request path — this keeps ListActivities/GetActivity pure, fast
+// reads with no third-party dependency, and converges deterministically
+// regardless of which rows users happen to read. Returns the number of rows
+// that had at least one field successfully backfilled.
+func (s *ActivityService) BackfillDisplayAddressSweep(ctx context.Context, limit int) (int, error) {
+	activities, err := s.repo.FindNeedingDisplayBackfill(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+
+	resolved := 0
+	for _, a := range activities {
+		var displayOrigin, displayDestination *string
+
+		if a.DisplayOrigin == nil && a.OriginLat != nil && a.OriginLng != nil {
+			if addr, err := s.shortAddr.Resolve(ctx, *a.OriginLat, *a.OriginLng); err == nil {
+				displayOrigin = &addr
+			}
+		}
+		if a.DisplayDestination == nil && a.DestLat != nil && a.DestLng != nil {
+			if addr, err := s.shortAddr.Resolve(ctx, *a.DestLat, *a.DestLng); err == nil {
+				displayDestination = &addr
+			}
+		}
+		if displayOrigin == nil && displayDestination == nil {
+			continue
+		}
+		if err := s.repo.BackfillDisplayAddress(ctx, a.ID, displayOrigin, displayDestination); err != nil {
+			logger.L().Warn("backfill display address failed", zap.String("activity_id", a.ID.String()), zap.Error(err))
+			continue
+		}
+		resolved++
+	}
+	return resolved, nil
 }
 
 // ExportRowCap is the maximum number of rows returned by ExportActivities.

@@ -22,6 +22,7 @@ import (
 	"github.com/dipu/atmos-core/internal/gmail/domain"
 	"github.com/dipu/atmos-core/internal/gmail/parser"
 	"github.com/dipu/atmos-core/internal/gmail/repository"
+	"github.com/dipu/atmos-core/internal/shortaddress"
 	"github.com/dipu/atmos-core/platform/logger"
 	uuidpkg "github.com/dipu/atmos-core/platform/uuid"
 	"github.com/google/uuid"
@@ -62,6 +63,7 @@ type GmailService struct {
 	activitySvc *actservice.ActivityService
 	registry    *parser.Registry
 	geocoder    geocoder.Geocoder
+	shortAddr   shortaddress.Resolver
 	llmParser   *parser.LLMParser
 	hmacSecret  []byte
 	batchSize   int64
@@ -84,6 +86,7 @@ func NewGmailService(
 	logRepo *repository.LogRepository,
 	provRepo *repository.ProviderRepository,
 	activitySvc *actservice.ActivityService,
+	shortAddr shortaddress.Resolver,
 ) *GmailService {
 	batchSize := cfg.BatchSize
 	if batchSize <= 0 {
@@ -103,6 +106,7 @@ func NewGmailService(
 		activitySvc: activitySvc,
 		registry:    parser.NewRegistry(),
 		geocoder:    geocoder.New(cfg.MapsAPIKey),
+		shortAddr:   shortAddr,
 		llmParser:   parser.NewLLMParser(cfg.GroqAPIKey, cfg.GroqModel, 1),
 		hmacSecret:  []byte(cfg.HMACSecret),
 		batchSize:   batchSize,
@@ -698,13 +702,20 @@ func (s *GmailService) buildAndIngest(
 		actType = actdomain.ActivityFlight
 	}
 
-	// Geocode pickup and drop concurrently — two independent HTTP calls.
-	type geoResult struct{ lat, lng *float64 }
+	// Geocode pickup and drop concurrently, then resolve each one's short
+	// display address in the same goroutine right after — pickup and drop
+	// stay independent end-to-end (geocode+resolve for one runs concurrently
+	// with geocode+resolve for the other), rather than serializing the
+	// resolve step across both after the channels join.
+	type geoResult struct {
+		lat, lng *float64
+		display  *string
+	}
 	pickupCh := make(chan geoResult, 1)
 	dropCh := make(chan geoResult, 1)
 
 	go func() {
-		res := geoResult{ride.PickupLat, ride.PickupLng}
+		res := geoResult{lat: ride.PickupLat, lng: ride.PickupLng}
 		if res.lat == nil && ride.PickupAddress != "" {
 			if lat, lng, err := s.geocoder.Geocode(ctx, ride.PickupAddress); err == nil {
 				res.lat, res.lng = &lat, &lng
@@ -712,10 +723,17 @@ func (s *GmailService) buildAndIngest(
 				log.Debug("gmail: geocode pickup failed", zap.String("address", ride.PickupAddress), zap.Error(err))
 			}
 		}
+		if res.lat != nil && res.lng != nil {
+			if addr, err := s.shortAddr.Resolve(ctx, *res.lat, *res.lng); err == nil {
+				res.display = &addr
+			} else {
+				log.Debug("gmail: short address pickup failed", zap.Error(err))
+			}
+		}
 		pickupCh <- res
 	}()
 	go func() {
-		res := geoResult{ride.DropLat, ride.DropLng}
+		res := geoResult{lat: ride.DropLat, lng: ride.DropLng}
 		if res.lat == nil && ride.DropAddress != "" {
 			if lat, lng, err := s.geocoder.Geocode(ctx, ride.DropAddress); err == nil {
 				res.lat, res.lng = &lat, &lng
@@ -723,10 +741,18 @@ func (s *GmailService) buildAndIngest(
 				log.Debug("gmail: geocode drop failed", zap.String("address", ride.DropAddress), zap.Error(err))
 			}
 		}
+		if res.lat != nil && res.lng != nil {
+			if addr, err := s.shortAddr.Resolve(ctx, *res.lat, *res.lng); err == nil {
+				res.display = &addr
+			} else {
+				log.Debug("gmail: short address drop failed", zap.Error(err))
+			}
+		}
 		dropCh <- res
 	}()
 	pickupRes := <-pickupCh
 	dropRes := <-dropCh
+	displayOriginPtr, displayDestinationPtr := pickupRes.display, dropRes.display
 
 	var endedAt *time.Time
 	if ride.DurationMinutes != nil {
@@ -753,27 +779,29 @@ func (s *GmailService) buildAndIngest(
 	}
 
 	activity, _, err := s.activitySvc.IngestWithDedup(ctx, actservice.IngestInput{
-		UserID:          userID,
-		ActivityType:    actType,
-		TransportMode:   &mode,
-		DistanceKM:      &ride.DistanceKM,
-		DurationMinutes: ride.DurationMinutes,
-		Source:          actdomain.SourceGmail,
-		Provider:        &providerCode,
-		RawMetadata:     actdomain.RawMetadata(ride.Metadata),
-		StartedAt:       startedAt,
-		EndedAt:         endedAt,
-		UserTimezone:    "UTC",
-		IdempotencyKey:  "gmail:" + messageID,
-		Origin:          originPtr,
-		Destination:     destinationPtr,
-		OriginLat:       pickupRes.lat,
-		OriginLng:       pickupRes.lng,
-		DestLat:         dropRes.lat,
-		DestLng:         dropRes.lng,
-		ReceiptID:       &receiptID,
-		FareAmount:      ride.FareAmount,
-		FareCurrency:    fareCurrencyPtr,
+		UserID:             userID,
+		ActivityType:       actType,
+		TransportMode:      &mode,
+		DistanceKM:         &ride.DistanceKM,
+		DurationMinutes:    ride.DurationMinutes,
+		Source:             actdomain.SourceGmail,
+		Provider:           &providerCode,
+		RawMetadata:        actdomain.RawMetadata(ride.Metadata),
+		StartedAt:          startedAt,
+		EndedAt:            endedAt,
+		UserTimezone:       "UTC",
+		IdempotencyKey:     "gmail:" + messageID,
+		Origin:             originPtr,
+		Destination:        destinationPtr,
+		DisplayOrigin:      displayOriginPtr,
+		DisplayDestination: displayDestinationPtr,
+		OriginLat:          pickupRes.lat,
+		OriginLng:          pickupRes.lng,
+		DestLat:            dropRes.lat,
+		DestLng:            dropRes.lng,
+		ReceiptID:          &receiptID,
+		FareAmount:         ride.FareAmount,
+		FareCurrency:       fareCurrencyPtr,
 	})
 	return activity, err
 }
