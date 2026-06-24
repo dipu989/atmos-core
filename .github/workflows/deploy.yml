@@ -60,4 +60,5 @@ jobs:
             docker-compose down
             docker pull 844486820561.dkr.ecr.ap-south-1.amazonaws.com/atmos-core:latest
             docker-compose up -d
+            docker exec atmos-api /app/migrate up
             docker image prune -f
