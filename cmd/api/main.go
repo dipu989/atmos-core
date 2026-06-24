@@ -54,6 +54,7 @@ import (
 	insightservice "github.com/dipu/atmos-core/internal/insight/service"
 	notifservice "github.com/dipu/atmos-core/internal/notification/service"
 	placeshandler "github.com/dipu/atmos-core/internal/places"
+	"github.com/dipu/atmos-core/internal/shortaddress"
 	timelineagg "github.com/dipu/atmos-core/internal/timeline/aggregator"
 	timelinehandler "github.com/dipu/atmos-core/internal/timeline/handler"
 	timelinerepo "github.com/dipu/atmos-core/internal/timeline/repository"
@@ -145,7 +146,8 @@ func main() {
 	)
 	identitySvc := idservice.NewIdentityService(userRepo, tokenRepo)
 	deviceSvc := devservice.NewDeviceService(deviceRepo)
-	activitySvc := actservice.NewActivityService(activityRepo, bus)
+	shortAddr := shortaddress.New(cfg.Google.MapsAPIKey, shortaddress.NewGormCache(db))
+	activitySvc := actservice.NewActivityService(activityRepo, bus, shortAddr)
 	regionFn := func(ctx context.Context, userID uuid.UUID) string {
 		prefs, err := userRepo.GetPreferences(ctx, userID)
 		if err != nil || prefs.Region == "" {
@@ -172,6 +174,7 @@ func main() {
 		gmailLogRepo,
 		gmailProvRepo,
 		activitySvc,
+		shortAddr,
 	)
 
 	// --- Event subscriptions ---

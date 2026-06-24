@@ -89,3 +89,24 @@ func TestBuildGPSEnrichInput_NoCoords(t *testing.T) {
 		t.Errorf("DestLat should be nil when GPS has no coords")
 	}
 }
+
+// ── buildEnrichInput ─────────────────────────────────────────────────────────
+
+func TestBuildEnrichInput_CarriesDisplayAddresses(t *testing.T) {
+	t.Parallel()
+	origin := "Kaggadasapura, Bengaluru"
+	destination := "Krishnaiyyanapalya, Bengaluru"
+	input := IngestInput{
+		StartedAt:          time.Now(),
+		DisplayOrigin:      &origin,
+		DisplayDestination: &destination,
+	}
+	e := buildEnrichInput(input, actdomain.Activity{}, 0.82)
+
+	if e.DisplayOrigin == nil || *e.DisplayOrigin != origin {
+		t.Errorf("DisplayOrigin = %v, want %q", e.DisplayOrigin, origin)
+	}
+	if e.DisplayDestination == nil || *e.DisplayDestination != destination {
+		t.Errorf("DisplayDestination = %v, want %q", e.DisplayDestination, destination)
+	}
+}

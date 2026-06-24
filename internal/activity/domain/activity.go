@@ -68,18 +68,24 @@ type Activity struct {
 	Status          ActivityStatus `gorm:"not null;default:'pending'" json:"status"`
 	FailureReason   *string        `json:"failure_reason,omitempty"`
 	// Dedup fields — populated by GPS tracking and/or receipt ingestion.
-	Origin          *string   `json:"origin,omitempty"`
-	Destination     *string   `json:"destination,omitempty"`
-	OriginLat       *float64  `gorm:"type:double precision"      json:"origin_lat,omitempty"`
-	OriginLng       *float64  `gorm:"type:double precision"      json:"origin_lng,omitempty"`
-	DestLat         *float64  `gorm:"type:double precision"      json:"dest_lat,omitempty"`
-	DestLng         *float64  `gorm:"type:double precision"      json:"dest_lng,omitempty"`
-	ReceiptID       *string   `json:"receipt_id,omitempty"`
-	FareAmount      *float64  `gorm:"type:numeric(10,2)"         json:"fare_amount,omitempty"`
-	FareCurrency    *string   `json:"fare_currency,omitempty"`
-	MatchConfidence *float64  `gorm:"type:numeric(4,3)"          json:"match_confidence,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	Origin      *string `json:"origin,omitempty"`
+	Destination *string `json:"destination,omitempty"`
+	// DisplayOrigin/DisplayDestination are short, human-friendly addresses
+	// (e.g. "Kaggadasapura, Bengaluru") resolved from coordinates via Google
+	// Places. Clients should prefer these over Origin/Destination and fall
+	// back when nil (no coords, resolver unavailable, or not yet resolved).
+	DisplayOrigin      *string   `json:"display_origin,omitempty"`
+	DisplayDestination *string   `json:"display_destination,omitempty"`
+	OriginLat          *float64  `gorm:"type:double precision"      json:"origin_lat,omitempty"`
+	OriginLng          *float64  `gorm:"type:double precision"      json:"origin_lng,omitempty"`
+	DestLat            *float64  `gorm:"type:double precision"      json:"dest_lat,omitempty"`
+	DestLng            *float64  `gorm:"type:double precision"      json:"dest_lng,omitempty"`
+	ReceiptID          *string   `json:"receipt_id,omitempty"`
+	FareAmount         *float64  `gorm:"type:numeric(10,2)"         json:"fare_amount,omitempty"`
+	FareCurrency       *string   `json:"fare_currency,omitempty"`
+	MatchConfidence    *float64  `gorm:"type:numeric(4,3)"          json:"match_confidence,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 	// KgCO2e is populated via a LEFT JOIN with the emissions table on read.
 	// It is not a column on activities and must never be written by GORM.
 	KgCO2e *float64 `gorm:"<-:false;column:kg_co2e" json:"kg_co2e,omitempty"`

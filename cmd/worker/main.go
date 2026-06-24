@@ -23,6 +23,7 @@ import (
 	insightrepo "github.com/dipu/atmos-core/internal/insight/repository"
 	insightservice "github.com/dipu/atmos-core/internal/insight/service"
 	notifservice "github.com/dipu/atmos-core/internal/notification/service"
+	"github.com/dipu/atmos-core/internal/shortaddress"
 	timelineagg "github.com/dipu/atmos-core/internal/timeline/aggregator"
 	timelinerepo "github.com/dipu/atmos-core/internal/timeline/repository"
 	timelineservice "github.com/dipu/atmos-core/internal/timeline/service"
@@ -75,7 +76,8 @@ func main() {
 
 	// --- Services ---
 	identitySvc := idservice.NewIdentityService(userRepo, tokenRepo)
-	activitySvc := actservice.NewActivityService(activityRepo, bus)
+	shortAddr := shortaddress.New(cfg.Google.MapsAPIKey, shortaddress.NewGormCache(db))
+	activitySvc := actservice.NewActivityService(activityRepo, bus, shortAddr)
 	regionFn := func(ctx context.Context, userID uuid.UUID) string {
 		prefs, err := userRepo.GetPreferences(ctx, userID)
 		if err != nil || prefs.Region == "" {
@@ -102,6 +104,7 @@ func main() {
 		gmailLogRepo,
 		gmailProvRepo,
 		activitySvc,
+		shortAddr,
 	)
 
 	// --- Event subscriptions ---
@@ -135,6 +138,22 @@ func main() {
 			zap.Int("enriched", result.Enriched),
 			zap.Int("failed", result.Failed),
 		)
+	})
+
+	// Display-address backfill sweep — every 15 minutes. Resolves short
+	// display addresses for historical activities that predate the
+	// shortaddress resolver. Deliberately a cron sweep rather than a
+	// read-path backfill: it converges deterministically system-wide
+	// regardless of which rows users happen to read, and keeps
+	// ListActivities/GetActivity pure DB reads with no third-party call.
+	const displayBackfillBatchSize = 50
+	c.AddFunc("*/15 * * * *", func() {
+		resolved, err := activitySvc.BackfillDisplayAddressSweep(context.Background(), displayBackfillBatchSize)
+		if err != nil {
+			log.Error("cron: display address backfill failed", zap.Error(err))
+			return
+		}
+		log.Info("cron: display address backfill complete", zap.Int("resolved", resolved))
 	})
 
 	// Purge soft-deleted accounts — Monday and Thursday at 03:00
