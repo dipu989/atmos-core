@@ -258,6 +258,7 @@ func main() {
 	protected.Delete("/devices/:id", deviceH.Deregister)
 
 	protected.Get("/places/autocomplete", placesH.Autocomplete)
+	protected.Get("/places/distance", placesH.Distance)
 
 	protected.Post("/activities", activityH.Ingest)
 	protected.Get("/activities", activityH.ListActivities)
