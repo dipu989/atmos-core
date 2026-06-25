@@ -16,6 +16,356 @@
     "host": "localhost:8081",
     "basePath": "/api/v1",
     "paths": {
+        "/activities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of activities for the authenticated user.\nReturns all activities when from/to are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "List activities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ActivitiesPage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records a transport or flight activity and triggers async emission calculation.\nactivity_type is derived automatically from transport_mode — do not send it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Ingest an activity",
+                "parameters": [
+                    {
+                        "description": "Activity payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.IngestActivityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Activity"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/activities/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all activities for the authenticated user as a downloadable CSV file.\nOptional from/to query params filter by date_local (YYYY-MM-DD). Capped at 5000 rows.",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Export activities as CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "CSV file attachment",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/activities/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a single activity by ID (must belong to the authenticated user),\nincluding a server-computed impact context (trees/LED-hours/global-%\ncomparisons and a greener-alternative suggestion where one exists).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Get an activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Activity UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ActivityDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently removes an activity and recalculates the affected day's",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Delete an activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Activity UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Partially updates an activity. Only transport_mode, distance_km,",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Update an activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Activity UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateActivityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Activity"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/forgot-password": {
+            "post": {
+                "description": "Sends a reset link to the given email if an account exists.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Request a password reset email",
+                "parameters": [
+                    {
+                        "description": "Email address",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ForgotPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/auth/google/callback": {
             "get": {
                 "description": "Handles the OAuth callback, exchanges the code, and returns a JWT pair",
@@ -82,6 +432,54 @@
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/google/token": {
+            "post": {
+                "description": "Verifies a Google ID token from the native mobile SDK and returns a JWT pair",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Google Sign-In (mobile)",
+                "parameters": [
+                    {
+                        "description": "Google ID token",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GoogleTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GoogleCallbackResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -272,6 +670,641 @@
                 }
             }
         },
+        "/auth/resend-verification": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sends a fresh verification link to the authenticated user's email.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Resend verification email",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/reset-password": {
+            "post": {
+                "description": "Validates the token from the reset email and sets a new password.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Reset password using a token",
+                "parameters": [
+                    {
+                        "description": "Token and new password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ResetPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/verify-email": {
+            "post": {
+                "description": "Confirms ownership of the email address using the token from the",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Verify email address",
+                "parameters": [
+                    {
+                        "description": "Verification token",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.VerifyEmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/devices": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all active devices registered by the authenticated user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "List active devices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.Device"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/register": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Registers a new device or updates an existing one (upsert by device_token).\niOS/iPadOS require push_provider=apns and apns_environment.\nAndroid requires push_provider=fcm or none.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Register or update a device",
+                "parameters": [
+                    {
+                        "description": "Device registration payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RegisterDeviceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Device"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/devices/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks a device as inactive (soft deactivation)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Deregister a device",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates the push token (and optionally app version) for a device",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "devices"
+                ],
+                "summary": "Update device push token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Push token payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatePushTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Device"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/auth-url": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the Google consent-page URL as JSON so mobile clients",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Get Gmail OAuth URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target platform: mobile (deep-link callback) or omit for web",
+                        "name": "platform",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/callback": {
+            "get": {
+                "description": "Exchanges the auth code for tokens and stores them.",
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Gmail OAuth callback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth state",
+                        "name": "state",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth code",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/connect": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Redirects the authenticated user to Google's consent page.",
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Start Gmail OAuth flow",
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/disconnect": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the stored Gmail OAuth tokens for the authenticated user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Disconnect Gmail",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/enrich-unrecognised": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches emails that failed regex parsing (status=unrecognised) and",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Re-parse unrecognised emails via LLM",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/logs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of emails we have processed (or attempted).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Gmail ingestion history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.LogsPage"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/reset-sync": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Clears the stored Gmail historyId so the next sync re-scans all",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Reset Gmail sync history",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns whether the user has connected their Gmail account.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Gmail connection status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConnectionStatus"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/gmail/sync": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches recent ride-receipt emails, parses them, and ingests activities.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "gmail"
+                ],
+                "summary": "Trigger Gmail email sync",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SyncResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Returns server and dependency status",
@@ -294,9 +1327,1394 @@
                     }
                 }
             }
+        },
+        "/insights": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a paginated list of insights for the authenticated user,\nfiltered to insights whose period overlaps the requested window.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "insights"
+                ],
+                "summary": "List insights",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Return only unread insights",
+                        "name": "unread",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-50, default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter window: week|month|year (default week)",
+                        "name": "period",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.InsightsPage"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/insights/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a single insight by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "insights"
+                ],
+                "summary": "Get insight",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Insight UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Insight"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/insights/{id}/read": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks the given insight as read for the authenticated user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "insights"
+                ],
+                "summary": "Mark insight as read",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Insight UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/gmail/enrich-all": {
+            "post": {
+                "description": "Internal endpoint called by the worker cron to enrich emails",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Re-parse unrecognised emails for all users via LLM",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Internal shared secret",
+                        "name": "X-Internal-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/gmail/sync-all": {
+            "post": {
+                "description": "Internal endpoint called by the Linux cron job to sync Gmail for every",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Trigger Gmail sync for all users",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Internal shared secret",
+                        "name": "X-Internal-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/places/autocomplete": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns up to 5 place suggestions matching the query string.\nBacked by the Google Maps Places Text Search API; degrades to an\nempty list when no Maps API key is configured.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "places"
+                ],
+                "summary": "Place autocomplete",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Partial place name or address",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/places.PlaceResult"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/places/distance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the route distance in km between two coordinates for a given\ntravel mode. Backed by the Google Maps Distance Matrix API.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "places"
+                ],
+                "summary": "Route distance",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "description": "Origin latitude",
+                        "name": "originLat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Origin longitude",
+                        "name": "originLng",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Destination latitude",
+                        "name": "destLat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Destination longitude",
+                        "name": "destLng",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "One of driving, walking, bicycling, transit",
+                        "name": "mode",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/places.DistanceResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/providers": {
+            "get": {
+                "description": "Returns providers that have at least one active email type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "providers"
+                ],
+                "summary": "List active providers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.Provider"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/providers/all": {
+            "get": {
+                "description": "Returns every provider including inactive (\"coming soon\") ones.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "providers"
+                ],
+                "summary": "List all providers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.Provider"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/timeline/daily": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the emission and distance summary for a given day, with trend vs. the previous day.\nDefaults to today when the date query param is omitted. Returns zeros (not 404) for days with no recorded activities.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "timeline"
+                ],
+                "summary": "Get daily timeline summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date in YYYY-MM-DD format (default: today in UTC)",
+                        "name": "date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.DailySummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/timeline/monthly": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the emission and distance summary for a given month, with trend vs. the previous month.\nDefaults to the current month when year/month are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "timeline"
+                ],
+                "summary": "Get monthly timeline summary",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Year (e.g. 2025)",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Month (1–12)",
+                        "name": "month",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MonthlySummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/timeline/weekly": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the emission and distance summary for a given week (Mon–Sun), with trend vs. the previous week.\nweek_start must be a Monday. Defaults to the current week's Monday when omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "timeline"
+                ],
+                "summary": "Get weekly timeline summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Week start date in YYYY-MM-DD format (Monday)",
+                        "name": "week_start",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WeeklySummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the authenticated user's profile",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get current user",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.User"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates display name, timezone, locale, or avatar URL",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Update current user profile",
+                "parameters": [
+                    {
+                        "description": "Profile update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft-deletes the authenticated user's account.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Delete account",
+                "parameters": [
+                    {
+                        "description": "Confirmation payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.DeleteAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/api-keys": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all active API keys for the authenticated user. Raw keys are never returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "api-keys"
+                ],
+                "summary": "List API keys",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.APIKeyItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Generates a new API key for the authenticated user. The raw key is returned\nonce in this response and cannot be retrieved again. Store it securely.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "api-keys"
+                ],
+                "summary": "Create an API key",
+                "parameters": [
+                    {
+                        "description": "Key name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateAPIKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateAPIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/api-keys/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently revokes an API key. This cannot be undone.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "api-keys"
+                ],
+                "summary": "Revoke an API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/preferences": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the authenticated user's preferences, creating defaults if none exist",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get user preferences",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.UserPreferences"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Partially updates preferences — only provided fields are changed",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Update user preferences",
+                "parameters": [
+                    {
+                        "description": "Preferences payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatePreferencesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.UserPreferences"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "domain.APNsEnvironment": {
+            "type": "string",
+            "enum": [
+                "sandbox",
+                "production"
+            ],
+            "x-enum-varnames": [
+                "APNsEnvironmentSandbox",
+                "APNsEnvironmentProduction"
+            ]
+        },
+        "domain.Activity": {
+            "type": "object",
+            "properties": {
+                "activity_type": {
+                    "$ref": "#/definitions/domain.ActivityType"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date_local": {
+                    "type": "string"
+                },
+                "dest_lat": {
+                    "type": "number"
+                },
+                "dest_lng": {
+                    "type": "number"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "display_destination": {
+                    "type": "string"
+                },
+                "display_origin": {
+                    "description": "DisplayOrigin/DisplayDestination are short, human-friendly addresses\n(e.g. \"Kaggadasapura, Bengaluru\") resolved from coordinates via Google\nPlaces. Clients should prefer these over Origin/Destination and fall\nback when nil (no coords, resolver unavailable, or not yet resolved).",
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "duration_minutes": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "energy_kwh": {
+                    "type": "number"
+                },
+                "failure_reason": {
+                    "type": "string"
+                },
+                "fare_amount": {
+                    "type": "number"
+                },
+                "fare_currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kg_co2e": {
+                    "description": "KgCO2e is populated via a LEFT JOIN with the emissions table on read.\nIt is not a column on activities and must never be written by GORM.",
+                    "type": "number"
+                },
+                "match_confidence": {
+                    "type": "number"
+                },
+                "origin": {
+                    "description": "Dedup fields — populated by GPS tracking and/or receipt ingestion.",
+                    "type": "string"
+                },
+                "origin_lat": {
+                    "type": "number"
+                },
+                "origin_lng": {
+                    "type": "number"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "raw_metadata": {
+                    "$ref": "#/definitions/domain.RawMetadata"
+                },
+                "receipt_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/domain.ActivitySource"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.ActivityStatus"
+                },
+                "transport_mode": {
+                    "$ref": "#/definitions/domain.TransportMode"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ActivitySource": {
+            "type": "string",
+            "enum": [
+                "manual",
+                "gps",
+                "gps+receipt",
+                "uber",
+                "ola",
+                "rapido",
+                "namma_yatri",
+                "gmail",
+                "health_kit"
+            ],
+            "x-enum-comments": {
+                "SourceGPSReceipt": "GPS trip enriched with a matched receipt"
+            },
+            "x-enum-descriptions": [
+                "",
+                "",
+                "GPS trip enriched with a matched receipt",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+            ],
+            "x-enum-varnames": [
+                "SourceManual",
+                "SourceGPS",
+                "SourceGPSReceipt",
+                "SourceUber",
+                "SourceOla",
+                "SourceRapido",
+                "SourceNammaYatri",
+                "SourceGmail",
+                "SourceHealth"
+            ]
+        },
+        "domain.ActivityStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "processed",
+                "failed",
+                "skipped"
+            ],
+            "x-enum-varnames": [
+                "StatusPending",
+                "StatusProcessed",
+                "StatusFailed",
+                "StatusSkipped"
+            ]
+        },
+        "domain.ActivityType": {
+            "type": "string",
+            "enum": [
+                "transport",
+                "flight",
+                "energy",
+                "food"
+            ],
+            "x-enum-varnames": [
+                "ActivityTransport",
+                "ActivityFlight",
+                "ActivityEnergy",
+                "ActivityFood"
+            ]
+        },
+        "domain.Breakdown": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/domain.ModeBreakdown"
+            }
+        },
+        "domain.Device": {
+            "type": "object",
+            "properties": {
+                "apns_environment": {
+                    "$ref": "#/definitions/domain.APNsEnvironment"
+                },
+                "app_version": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "device_name": {
+                    "type": "string"
+                },
+                "device_token": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "last_seen_at": {
+                    "type": "string"
+                },
+                "os_version": {
+                    "type": "string"
+                },
+                "platform": {
+                    "$ref": "#/definitions/domain.Platform"
+                },
+                "push_provider": {
+                    "$ref": "#/definitions/domain.PushProvider"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.EmailIngestionLog": {
+            "type": "object",
+            "properties": {
+                "activity_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error_reason": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "parsed_at": {
+                    "type": "string"
+                },
+                "sender_code": {
+                    "description": "FK → provider_email_types.code; NULL for pre-route skips",
+                    "type": "string"
+                },
+                "snippet": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.Insight": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "cta_label": {
+                    "type": "string"
+                },
+                "cta_target": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "insight_type": {
+                    "$ref": "#/definitions/domain.InsightType"
+                },
+                "is_read": {
+                    "type": "boolean"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/domain.InsightMetadata"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "period_type": {
+                    "$ref": "#/definitions/domain.PeriodType"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.InsightMetadata": {
+            "type": "object",
+            "additionalProperties": {}
+        },
+        "domain.InsightType": {
+            "type": "string",
+            "enum": [
+                "streak",
+                "milestone",
+                "comparison",
+                "tip",
+                "anomaly",
+                "weekly_comparison",
+                "mode_spike",
+                "mode_summary"
+            ],
+            "x-enum-varnames": [
+                "InsightStreak",
+                "InsightMilestone",
+                "InsightComparison",
+                "InsightTip",
+                "InsightAnomaly",
+                "InsightWeeklyComparison",
+                "InsightModeSpike",
+                "InsightModeSummary"
+            ]
+        },
+        "domain.ModeBreakdown": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "kg_co2e": {
+                    "type": "number"
+                }
+            }
+        },
+        "domain.PeriodType": {
+            "type": "string",
+            "enum": [
+                "daily",
+                "weekly",
+                "monthly"
+            ],
+            "x-enum-varnames": [
+                "PeriodDaily",
+                "PeriodWeekly",
+                "PeriodMonthly"
+            ]
+        },
+        "domain.Platform": {
+            "type": "string",
+            "enum": [
+                "ios",
+                "ipados",
+                "android",
+                "web",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "PlatformIOS",
+                "PlatformIPadOS",
+                "PlatformAndroid",
+                "PlatformWeb",
+                "PlatformUnknown"
+            ]
+        },
+        "domain.Provider": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "logo_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.PushProvider": {
+            "type": "string",
+            "enum": [
+                "apns",
+                "fcm",
+                "none"
+            ],
+            "x-enum-varnames": [
+                "PushProviderAPNs",
+                "PushProviderFCM",
+                "PushProviderNone"
+            ]
+        },
+        "domain.RawMetadata": {
+            "type": "object",
+            "additionalProperties": {}
+        },
+        "domain.SyncSummary": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "messages_checked": {
+                    "type": "integer"
+                },
+                "parsed": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "unrecognised": {
+                    "description": "queued for LLM enrichment",
+                    "type": "integer"
+                }
+            }
+        },
+        "domain.TransportMode": {
+            "type": "string",
+            "enum": [
+                "cab",
+                "car",
+                "auto_rickshaw",
+                "bus",
+                "metro",
+                "train",
+                "two_wheeler",
+                "walk",
+                "walking",
+                "bicycle",
+                "cycling",
+                "flight"
+            ],
+            "x-enum-comments": {
+                "ModeBicycle": "legacy; prefer ModeCycling",
+                "ModeWalk": "legacy; prefer ModeWalking"
+            },
+            "x-enum-descriptions": [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "legacy; prefer ModeWalking",
+                "",
+                "legacy; prefer ModeCycling",
+                "",
+                ""
+            ],
+            "x-enum-varnames": [
+                "ModeCAB",
+                "ModeCar",
+                "ModeAutoRickshaw",
+                "ModeBus",
+                "ModeMetro",
+                "ModeTrain",
+                "ModeTwoWheeler",
+                "ModeWalk",
+                "ModeWalking",
+                "ModeBicycle",
+                "ModeCycling",
+                "ModeFlight"
+            ]
+        },
         "domain.User": {
             "type": "object",
             "properties": {
@@ -312,6 +2730,9 @@
                 "email": {
                     "type": "string"
                 },
+                "email_verified_at": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -322,6 +2743,203 @@
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.UserPreferences": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "daily_goal_kg_co2e": {
+                    "type": "number"
+                },
+                "default_transport": {
+                    "type": "string"
+                },
+                "distance_unit": {
+                    "type": "string"
+                },
+                "home_address": {
+                    "type": "string"
+                },
+                "home_lat": {
+                    "type": "number"
+                },
+                "home_lng": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "push_notifications_enabled": {
+                    "type": "boolean"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "work_address": {
+                    "type": "string"
+                },
+                "work_lat": {
+                    "type": "number"
+                },
+                "work_lng": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.APIKeyItem": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prefix": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ActivitiesPage": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Activity"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.ActivityDetailResponse": {
+            "type": "object",
+            "properties": {
+                "activity_type": {
+                    "$ref": "#/definitions/domain.ActivityType"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date_local": {
+                    "type": "string"
+                },
+                "dest_lat": {
+                    "type": "number"
+                },
+                "dest_lng": {
+                    "type": "number"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "display_destination": {
+                    "type": "string"
+                },
+                "display_origin": {
+                    "description": "DisplayOrigin/DisplayDestination are short, human-friendly addresses\n(e.g. \"Kaggadasapura, Bengaluru\") resolved from coordinates via Google\nPlaces. Clients should prefer these over Origin/Destination and fall\nback when nil (no coords, resolver unavailable, or not yet resolved).",
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "duration_minutes": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "energy_kwh": {
+                    "type": "number"
+                },
+                "failure_reason": {
+                    "type": "string"
+                },
+                "fare_amount": {
+                    "type": "number"
+                },
+                "fare_currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "impact": {
+                    "$ref": "#/definitions/dto.ImpactContext"
+                },
+                "kg_co2e": {
+                    "description": "KgCO2e is populated via a LEFT JOIN with the emissions table on read.\nIt is not a column on activities and must never be written by GORM.",
+                    "type": "number"
+                },
+                "match_confidence": {
+                    "type": "number"
+                },
+                "origin": {
+                    "description": "Dedup fields — populated by GPS tracking and/or receipt ingestion.",
+                    "type": "string"
+                },
+                "origin_lat": {
+                    "type": "number"
+                },
+                "origin_lng": {
+                    "type": "number"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "raw_metadata": {
+                    "$ref": "#/definitions/domain.RawMetadata"
+                },
+                "receipt_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/domain.ActivitySource"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.ActivityStatus"
+                },
+                "transport_mode": {
+                    "$ref": "#/definitions/domain.TransportMode"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -340,6 +2958,116 @@
                 }
             }
         },
+        "dto.ConnectionStatus": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "type": "boolean"
+                },
+                "connected_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "last_sync_at": {
+                    "type": "string"
+                },
+                "last_sync_summary": {
+                    "$ref": "#/definitions/domain.SyncSummary"
+                }
+            }
+        },
+        "dto.CreateAPIKeyRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 1
+                }
+            }
+        },
+        "dto.CreateAPIKeyResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prefix": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.DailySummaryResponse": {
+            "type": "object",
+            "properties": {
+                "activity_count": {
+                    "type": "integer"
+                },
+                "breakdown": {
+                    "$ref": "#/definitions/domain.Breakdown"
+                },
+                "computed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date_local": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "total_distance_km": {
+                    "type": "number"
+                },
+                "total_kg_co2e": {
+                    "type": "number"
+                },
+                "trend": {
+                    "$ref": "#/definitions/dto.TrendData"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.DeleteAccountRequest": {
+            "type": "object",
+            "properties": {
+                "confirmation": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ForgotPasswordRequest": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.GoogleCallbackResponse": {
             "type": "object",
             "properties": {
@@ -354,6 +3082,160 @@
                 },
                 "user": {
                     "$ref": "#/definitions/domain.User"
+                }
+            }
+        },
+        "dto.GoogleTokenRequest": {
+            "type": "object",
+            "required": [
+                "id_token"
+            ],
+            "properties": {
+                "id_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ImpactContext": {
+            "type": "object",
+            "properties": {
+                "alternative_kg_co2e": {
+                    "type": "number"
+                },
+                "alternative_mode": {
+                    "description": "AlternativeMode is the greenest readily-available substitute transport\nmode, omitted when the activity's mode is already zero-emission or no\nalternative is actually greener for this trip's distance.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/domain.TransportMode"
+                        }
+                    ]
+                },
+                "approximate": {
+                    "type": "boolean"
+                },
+                "global_average_pct": {
+                    "type": "integer"
+                },
+                "led_hours_equivalent": {
+                    "type": "integer"
+                },
+                "savings_kg_co2e": {
+                    "type": "number"
+                },
+                "savings_pct": {
+                    "type": "integer"
+                },
+                "trees_needed_to_offset": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.IngestActivityRequest": {
+            "type": "object",
+            "required": [
+                "distance_km",
+                "source",
+                "started_at",
+                "transport_mode"
+            ],
+            "properties": {
+                "dest_lat": {
+                    "type": "number",
+                    "maximum": 90,
+                    "minimum": -90
+                },
+                "dest_lng": {
+                    "type": "number",
+                    "maximum": 180,
+                    "minimum": -180
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "duration_minutes": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "fare_amount": {
+                    "type": "number"
+                },
+                "fare_currency": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "description": "IdempotencyKey is optional. When omitted the server derives one from stable fields.",
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "origin_lat": {
+                    "description": "Dedup fields — GPS coordinates for trip origin/destination.",
+                    "type": "number",
+                    "maximum": 90,
+                    "minimum": -90
+                },
+                "origin_lng": {
+                    "type": "number",
+                    "maximum": 180,
+                    "minimum": -180
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "manual",
+                        "gps",
+                        "uber",
+                        "ola",
+                        "rapido",
+                        "namma_yatri",
+                        "gmail",
+                        "health_kit"
+                    ]
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "transport_mode": {
+                    "type": "string",
+                    "enum": [
+                        "walking",
+                        "cycling",
+                        "metro",
+                        "train",
+                        "car",
+                        "cab",
+                        "flight",
+                        "bus",
+                        "walk",
+                        "bicycle",
+                        "auto_rickshaw",
+                        "two_wheeler"
+                    ]
+                }
+            }
+        },
+        "dto.InsightsPage": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Insight"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -383,6 +3265,67 @@
                 }
             }
         },
+        "dto.LogsPage": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.EmailIngestionLog"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.MonthlySummaryResponse": {
+            "type": "object",
+            "properties": {
+                "activity_count": {
+                    "type": "integer"
+                },
+                "breakdown": {
+                    "$ref": "#/definitions/domain.Breakdown"
+                },
+                "computed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "month": {
+                    "type": "integer"
+                },
+                "total_distance_km": {
+                    "type": "number"
+                },
+                "total_kg_co2e": {
+                    "type": "number"
+                },
+                "trend": {
+                    "$ref": "#/definitions/dto.TrendData"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.RefreshRequest": {
             "type": "object",
             "required": [
@@ -391,6 +3334,62 @@
             "properties": {
                 "refresh_token": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.RegisterDeviceRequest": {
+            "type": "object",
+            "required": [
+                "device_token",
+                "platform"
+            ],
+            "properties": {
+                "apns_environment": {
+                    "type": "string",
+                    "enum": [
+                        "sandbox",
+                        "production"
+                    ]
+                },
+                "app_version": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "device_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "device_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 1
+                },
+                "os_version": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": [
+                        "ios",
+                        "ipados",
+                        "android",
+                        "web",
+                        "unknown"
+                    ]
+                },
+                "push_provider": {
+                    "type": "string",
+                    "enum": [
+                        "apns",
+                        "fcm",
+                        "none"
+                    ]
+                },
+                "push_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 1
                 }
             }
         },
@@ -417,6 +3416,47 @@
                 }
             }
         },
+        "dto.ResetPasswordRequest": {
+            "type": "object",
+            "required": [
+                "password",
+                "token"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 8
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.SyncResponse": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "messages_checked": {
+                    "type": "integer"
+                },
+                "parsed": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "unrecognised": {
+                    "description": "queued for LLM enrichment",
+                    "type": "integer"
+                }
+            }
+        },
         "dto.TokenPairResponse": {
             "type": "object",
             "properties": {
@@ -424,6 +3464,211 @@
                     "type": "string"
                 },
                 "refresh_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TrendData": {
+            "type": "object",
+            "properties": {
+                "change_pct": {
+                    "type": "number"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "prev_total_kg_co2e": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.UpdateActivityRequest": {
+            "type": "object",
+            "properties": {
+                "distance_km": {
+                    "type": "number"
+                },
+                "duration_minutes": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "transport_mode": {
+                    "type": "string",
+                    "enum": [
+                        "walking",
+                        "cycling",
+                        "metro",
+                        "train",
+                        "car",
+                        "cab",
+                        "flight",
+                        "bus",
+                        "walk",
+                        "bicycle",
+                        "auto_rickshaw",
+                        "two_wheeler"
+                    ]
+                }
+            }
+        },
+        "dto.UpdatePreferencesRequest": {
+            "type": "object",
+            "properties": {
+                "daily_goal_kg_co2e": {
+                    "type": "number"
+                },
+                "default_transport": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "distance_unit": {
+                    "type": "string",
+                    "enum": [
+                        "km",
+                        "miles"
+                    ]
+                },
+                "home_address": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "home_lat": {
+                    "type": "number"
+                },
+                "home_lng": {
+                    "type": "number"
+                },
+                "push_notifications_enabled": {
+                    "type": "boolean"
+                },
+                "work_address": {
+                    "type": "string",
+                    "maxLength": 500
+                },
+                "work_lat": {
+                    "type": "number"
+                },
+                "work_lng": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.UpdateProfileRequest": {
+            "type": "object",
+            "properties": {
+                "avatar_url": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1
+                },
+                "locale": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "minLength": 2
+                },
+                "timezone": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 1
+                }
+            }
+        },
+        "dto.UpdatePushTokenRequest": {
+            "type": "object",
+            "required": [
+                "push_token"
+            ],
+            "properties": {
+                "app_version": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "push_token": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 1
+                }
+            }
+        },
+        "dto.VerifyEmailRequest": {
+            "type": "object",
+            "required": [
+                "token"
+            ],
+            "properties": {
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.WeeklySummaryResponse": {
+            "type": "object",
+            "properties": {
+                "activity_count": {
+                    "type": "integer"
+                },
+                "breakdown": {
+                    "$ref": "#/definitions/domain.Breakdown"
+                },
+                "computed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "total_distance_km": {
+                    "type": "number"
+                },
+                "total_kg_co2e": {
+                    "type": "number"
+                },
+                "trend": {
+                    "$ref": "#/definitions/dto.TrendData"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "week_end": {
+                    "type": "string"
+                },
+                "week_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "places.DistanceResult": {
+            "type": "object",
+            "properties": {
+                "distanceKm": {
+                    "type": "number"
+                },
+                "found": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "places.PlaceResult": {
+            "type": "object",
+            "properties": {
+                "lat": {
+                    "type": "number"
+                },
+                "lng": {
+                    "type": "number"
+                },
+                "name": {
                     "type": "string"
                 }
             }
