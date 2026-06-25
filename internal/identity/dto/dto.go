@@ -20,9 +20,7 @@ type DeleteAccountRequest struct {
 type UpdatePreferencesRequest struct {
 	DistanceUnit             string   `json:"distance_unit"              validate:"omitempty,oneof=km miles"`
 	PushNotificationsEnabled *bool    `json:"push_notifications_enabled"`
-	WeeklyReportEnabled      *bool    `json:"weekly_report_enabled"`
 	DailyGoalKgCO2e          *float64 `json:"daily_goal_kg_co2e"         validate:"omitempty,gt=0"`
-	DataSharingEnabled       *bool    `json:"data_sharing_enabled"`
 	HomeAddress              *string  `json:"home_address"               validate:"omitempty,max=500"`
 	HomeLat                  *float64 `json:"home_lat"`
 	HomeLng                  *float64 `json:"home_lng"`
