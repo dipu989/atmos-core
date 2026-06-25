@@ -1,5 +1,379 @@
 basePath: /api/v1
 definitions:
+  domain.APNsEnvironment:
+    enum:
+    - sandbox
+    - production
+    type: string
+    x-enum-varnames:
+    - APNsEnvironmentSandbox
+    - APNsEnvironmentProduction
+  domain.Activity:
+    properties:
+      activity_type:
+        $ref: '#/definitions/domain.ActivityType'
+      created_at:
+        type: string
+      date_local:
+        type: string
+      dest_lat:
+        type: number
+      dest_lng:
+        type: number
+      destination:
+        type: string
+      device_id:
+        type: string
+      display_destination:
+        type: string
+      display_origin:
+        description: |-
+          DisplayOrigin/DisplayDestination are short, human-friendly addresses
+          (e.g. "Kaggadasapura, Bengaluru") resolved from coordinates via Google
+          Places. Clients should prefer these over Origin/Destination and fall
+          back when nil (no coords, resolver unavailable, or not yet resolved).
+        type: string
+      distance_km:
+        type: number
+      duration_minutes:
+        type: integer
+      ended_at:
+        type: string
+      energy_kwh:
+        type: number
+      failure_reason:
+        type: string
+      fare_amount:
+        type: number
+      fare_currency:
+        type: string
+      id:
+        type: string
+      kg_co2e:
+        description: |-
+          KgCO2e is populated via a LEFT JOIN with the emissions table on read.
+          It is not a column on activities and must never be written by GORM.
+        type: number
+      match_confidence:
+        type: number
+      origin:
+        description: Dedup fields — populated by GPS tracking and/or receipt ingestion.
+        type: string
+      origin_lat:
+        type: number
+      origin_lng:
+        type: number
+      provider:
+        type: string
+      raw_metadata:
+        $ref: '#/definitions/domain.RawMetadata'
+      receipt_id:
+        type: string
+      source:
+        $ref: '#/definitions/domain.ActivitySource'
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/domain.ActivityStatus'
+      transport_mode:
+        $ref: '#/definitions/domain.TransportMode'
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  domain.ActivitySource:
+    enum:
+    - manual
+    - gps
+    - gps+receipt
+    - uber
+    - ola
+    - rapido
+    - namma_yatri
+    - gmail
+    - health_kit
+    type: string
+    x-enum-comments:
+      SourceGPSReceipt: GPS trip enriched with a matched receipt
+    x-enum-descriptions:
+    - ""
+    - ""
+    - GPS trip enriched with a matched receipt
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    x-enum-varnames:
+    - SourceManual
+    - SourceGPS
+    - SourceGPSReceipt
+    - SourceUber
+    - SourceOla
+    - SourceRapido
+    - SourceNammaYatri
+    - SourceGmail
+    - SourceHealth
+  domain.ActivityStatus:
+    enum:
+    - pending
+    - processed
+    - failed
+    - skipped
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusProcessed
+    - StatusFailed
+    - StatusSkipped
+  domain.ActivityType:
+    enum:
+    - transport
+    - flight
+    - energy
+    - food
+    type: string
+    x-enum-varnames:
+    - ActivityTransport
+    - ActivityFlight
+    - ActivityEnergy
+    - ActivityFood
+  domain.Breakdown:
+    additionalProperties:
+      $ref: '#/definitions/domain.ModeBreakdown'
+    type: object
+  domain.Device:
+    properties:
+      apns_environment:
+        $ref: '#/definitions/domain.APNsEnvironment'
+      app_version:
+        type: string
+      created_at:
+        type: string
+      device_name:
+        type: string
+      device_token:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      last_seen_at:
+        type: string
+      os_version:
+        type: string
+      platform:
+        $ref: '#/definitions/domain.Platform'
+      push_provider:
+        $ref: '#/definitions/domain.PushProvider'
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  domain.EmailIngestionLog:
+    properties:
+      activity_id:
+        type: string
+      created_at:
+        type: string
+      error_reason:
+        type: string
+      id:
+        type: string
+      message_id:
+        type: string
+      parsed_at:
+        type: string
+      sender_code:
+        description: FK → provider_email_types.code; NULL for pre-route skips
+        type: string
+      snippet:
+        type: string
+      status:
+        type: string
+      subject:
+        type: string
+      user_id:
+        type: string
+    type: object
+  domain.Insight:
+    properties:
+      body:
+        type: string
+      created_at:
+        type: string
+      cta_label:
+        type: string
+      cta_target:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      insight_type:
+        $ref: '#/definitions/domain.InsightType'
+      is_read:
+        type: boolean
+      metadata:
+        $ref: '#/definitions/domain.InsightMetadata'
+      period_end:
+        type: string
+      period_start:
+        type: string
+      period_type:
+        $ref: '#/definitions/domain.PeriodType'
+      title:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  domain.InsightMetadata:
+    additionalProperties: {}
+    type: object
+  domain.InsightType:
+    enum:
+    - streak
+    - milestone
+    - comparison
+    - tip
+    - anomaly
+    - weekly_comparison
+    - mode_spike
+    - mode_summary
+    type: string
+    x-enum-varnames:
+    - InsightStreak
+    - InsightMilestone
+    - InsightComparison
+    - InsightTip
+    - InsightAnomaly
+    - InsightWeeklyComparison
+    - InsightModeSpike
+    - InsightModeSummary
+  domain.ModeBreakdown:
+    properties:
+      count:
+        type: integer
+      distance_km:
+        type: number
+      kg_co2e:
+        type: number
+    type: object
+  domain.PeriodType:
+    enum:
+    - daily
+    - weekly
+    - monthly
+    type: string
+    x-enum-varnames:
+    - PeriodDaily
+    - PeriodWeekly
+    - PeriodMonthly
+  domain.Platform:
+    enum:
+    - ios
+    - ipados
+    - android
+    - web
+    - unknown
+    type: string
+    x-enum-varnames:
+    - PlatformIOS
+    - PlatformIPadOS
+    - PlatformAndroid
+    - PlatformWeb
+    - PlatformUnknown
+  domain.Provider:
+    properties:
+      code:
+        type: string
+      country:
+        type: string
+      created_at:
+        type: string
+      display_name:
+        type: string
+      is_active:
+        type: boolean
+      logo_url:
+        type: string
+    type: object
+  domain.PushProvider:
+    enum:
+    - apns
+    - fcm
+    - none
+    type: string
+    x-enum-varnames:
+    - PushProviderAPNs
+    - PushProviderFCM
+    - PushProviderNone
+  domain.RawMetadata:
+    additionalProperties: {}
+    type: object
+  domain.SyncSummary:
+    properties:
+      failed:
+        type: integer
+      messages_checked:
+        type: integer
+      parsed:
+        type: integer
+      skipped:
+        type: integer
+      unrecognised:
+        description: queued for LLM enrichment
+        type: integer
+    type: object
+  domain.TransportMode:
+    enum:
+    - cab
+    - car
+    - auto_rickshaw
+    - bus
+    - metro
+    - train
+    - two_wheeler
+    - walk
+    - walking
+    - bicycle
+    - cycling
+    - flight
+    type: string
+    x-enum-comments:
+      ModeBicycle: legacy; prefer ModeCycling
+      ModeWalk: legacy; prefer ModeWalking
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - legacy; prefer ModeWalking
+    - ""
+    - legacy; prefer ModeCycling
+    - ""
+    - ""
+    x-enum-varnames:
+    - ModeCAB
+    - ModeCar
+    - ModeAutoRickshaw
+    - ModeBus
+    - ModeMetro
+    - ModeTrain
+    - ModeTwoWheeler
+    - ModeWalk
+    - ModeWalking
+    - ModeBicycle
+    - ModeCycling
+    - ModeFlight
   domain.User:
     properties:
       avatar_url:
@@ -10,6 +384,8 @@ definitions:
         type: string
       email:
         type: string
+      email_verified_at:
+        type: string
       id:
         type: string
       locale:
@@ -17,6 +393,143 @@ definitions:
       timezone:
         type: string
       updated_at:
+        type: string
+    type: object
+  domain.UserPreferences:
+    properties:
+      created_at:
+        type: string
+      daily_goal_kg_co2e:
+        type: number
+      default_transport:
+        type: string
+      distance_unit:
+        type: string
+      home_address:
+        type: string
+      home_lat:
+        type: number
+      home_lng:
+        type: number
+      id:
+        type: string
+      push_notifications_enabled:
+        type: boolean
+      region:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      work_address:
+        type: string
+      work_lat:
+        type: number
+      work_lng:
+        type: number
+    type: object
+  dto.APIKeyItem:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      prefix:
+        type: string
+    type: object
+  dto.ActivitiesPage:
+    properties:
+      activities:
+        items:
+          $ref: '#/definitions/domain.Activity'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  dto.ActivityDetailResponse:
+    properties:
+      activity_type:
+        $ref: '#/definitions/domain.ActivityType'
+      created_at:
+        type: string
+      date_local:
+        type: string
+      dest_lat:
+        type: number
+      dest_lng:
+        type: number
+      destination:
+        type: string
+      device_id:
+        type: string
+      display_destination:
+        type: string
+      display_origin:
+        description: |-
+          DisplayOrigin/DisplayDestination are short, human-friendly addresses
+          (e.g. "Kaggadasapura, Bengaluru") resolved from coordinates via Google
+          Places. Clients should prefer these over Origin/Destination and fall
+          back when nil (no coords, resolver unavailable, or not yet resolved).
+        type: string
+      distance_km:
+        type: number
+      duration_minutes:
+        type: integer
+      ended_at:
+        type: string
+      energy_kwh:
+        type: number
+      failure_reason:
+        type: string
+      fare_amount:
+        type: number
+      fare_currency:
+        type: string
+      id:
+        type: string
+      impact:
+        $ref: '#/definitions/dto.ImpactContext'
+      kg_co2e:
+        description: |-
+          KgCO2e is populated via a LEFT JOIN with the emissions table on read.
+          It is not a column on activities and must never be written by GORM.
+        type: number
+      match_confidence:
+        type: number
+      origin:
+        description: Dedup fields — populated by GPS tracking and/or receipt ingestion.
+        type: string
+      origin_lat:
+        type: number
+      origin_lng:
+        type: number
+      provider:
+        type: string
+      raw_metadata:
+        $ref: '#/definitions/domain.RawMetadata'
+      receipt_id:
+        type: string
+      source:
+        $ref: '#/definitions/domain.ActivitySource'
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/domain.ActivityStatus'
+      transport_mode:
+        $ref: '#/definitions/domain.TransportMode'
+      updated_at:
+        type: string
+      user_id:
         type: string
     type: object
   dto.AuthResponse:
@@ -28,6 +541,78 @@ definitions:
       user:
         $ref: '#/definitions/domain.User'
     type: object
+  dto.ConnectionStatus:
+    properties:
+      connected:
+        type: boolean
+      connected_at:
+        type: string
+      email:
+        type: string
+      last_sync_at:
+        type: string
+      last_sync_summary:
+        $ref: '#/definitions/domain.SyncSummary'
+    type: object
+  dto.CreateAPIKeyRequest:
+    properties:
+      name:
+        maxLength: 64
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  dto.CreateAPIKeyResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      prefix:
+        type: string
+    type: object
+  dto.DailySummaryResponse:
+    properties:
+      activity_count:
+        type: integer
+      breakdown:
+        $ref: '#/definitions/domain.Breakdown'
+      computed_at:
+        type: string
+      created_at:
+        type: string
+      date_local:
+        type: string
+      id:
+        type: string
+      total_distance_km:
+        type: number
+      total_kg_co2e:
+        type: number
+      trend:
+        $ref: '#/definitions/dto.TrendData'
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  dto.DeleteAccountRequest:
+    properties:
+      confirmation:
+        type: string
+    type: object
+  dto.ForgotPasswordRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
   dto.GoogleCallbackResponse:
     properties:
       access_token:
@@ -38,6 +623,121 @@ definitions:
         type: string
       user:
         $ref: '#/definitions/domain.User'
+    type: object
+  dto.GoogleTokenRequest:
+    properties:
+      id_token:
+        type: string
+    required:
+    - id_token
+    type: object
+  dto.ImpactContext:
+    properties:
+      alternative_kg_co2e:
+        type: number
+      alternative_mode:
+        allOf:
+        - $ref: '#/definitions/domain.TransportMode'
+        description: |-
+          AlternativeMode is the greenest readily-available substitute transport
+          mode, omitted when the activity's mode is already zero-emission or no
+          alternative is actually greener for this trip's distance.
+      approximate:
+        type: boolean
+      global_average_pct:
+        type: integer
+      led_hours_equivalent:
+        type: integer
+      savings_kg_co2e:
+        type: number
+      savings_pct:
+        type: integer
+      trees_needed_to_offset:
+        type: integer
+    type: object
+  dto.IngestActivityRequest:
+    properties:
+      dest_lat:
+        maximum: 90
+        minimum: -90
+        type: number
+      dest_lng:
+        maximum: 180
+        minimum: -180
+        type: number
+      distance_km:
+        type: number
+      duration_minutes:
+        minimum: 1
+        type: integer
+      ended_at:
+        type: string
+      fare_amount:
+        type: number
+      fare_currency:
+        type: string
+      idempotency_key:
+        description: IdempotencyKey is optional. When omitted the server derives one
+          from stable fields.
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+      origin_lat:
+        description: Dedup fields — GPS coordinates for trip origin/destination.
+        maximum: 90
+        minimum: -90
+        type: number
+      origin_lng:
+        maximum: 180
+        minimum: -180
+        type: number
+      source:
+        enum:
+        - manual
+        - gps
+        - uber
+        - ola
+        - rapido
+        - namma_yatri
+        - gmail
+        - health_kit
+        type: string
+      started_at:
+        type: string
+      transport_mode:
+        enum:
+        - walking
+        - cycling
+        - metro
+        - train
+        - car
+        - cab
+        - flight
+        - bus
+        - walk
+        - bicycle
+        - auto_rickshaw
+        - two_wheeler
+        type: string
+    required:
+    - distance_km
+    - source
+    - started_at
+    - transport_mode
+    type: object
+  dto.InsightsPage:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/domain.Insight'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
     type: object
   dto.LoginRequest:
     properties:
@@ -56,12 +756,94 @@ definitions:
     required:
     - refresh_token
     type: object
+  dto.LogsPage:
+    properties:
+      limit:
+        type: integer
+      logs:
+        items:
+          $ref: '#/definitions/domain.EmailIngestionLog'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  dto.MonthlySummaryResponse:
+    properties:
+      activity_count:
+        type: integer
+      breakdown:
+        $ref: '#/definitions/domain.Breakdown'
+      computed_at:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      month:
+        type: integer
+      total_distance_km:
+        type: number
+      total_kg_co2e:
+        type: number
+      trend:
+        $ref: '#/definitions/dto.TrendData'
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      year:
+        type: integer
+    type: object
   dto.RefreshRequest:
     properties:
       refresh_token:
         type: string
     required:
     - refresh_token
+    type: object
+  dto.RegisterDeviceRequest:
+    properties:
+      apns_environment:
+        enum:
+        - sandbox
+        - production
+        type: string
+      app_version:
+        maxLength: 50
+        type: string
+      device_name:
+        maxLength: 100
+        type: string
+      device_token:
+        maxLength: 512
+        minLength: 1
+        type: string
+      os_version:
+        maxLength: 50
+        type: string
+      platform:
+        enum:
+        - ios
+        - ipados
+        - android
+        - web
+        - unknown
+        type: string
+      push_provider:
+        enum:
+        - apns
+        - fcm
+        - none
+        type: string
+      push_token:
+        maxLength: 512
+        minLength: 1
+        type: string
+    required:
+    - device_token
+    - platform
     type: object
   dto.RegisterRequest:
     properties:
@@ -80,11 +862,181 @@ definitions:
     - email
     - password
     type: object
+  dto.ResetPasswordRequest:
+    properties:
+      password:
+        maxLength: 72
+        minLength: 8
+        type: string
+      token:
+        type: string
+    required:
+    - password
+    - token
+    type: object
+  dto.SyncResponse:
+    properties:
+      failed:
+        type: integer
+      message:
+        type: string
+      messages_checked:
+        type: integer
+      parsed:
+        type: integer
+      skipped:
+        type: integer
+      unrecognised:
+        description: queued for LLM enrichment
+        type: integer
+    type: object
   dto.TokenPairResponse:
     properties:
       access_token:
         type: string
       refresh_token:
+        type: string
+    type: object
+  dto.TrendData:
+    properties:
+      change_pct:
+        type: number
+      direction:
+        type: string
+      prev_total_kg_co2e:
+        type: number
+    type: object
+  dto.UpdateActivityRequest:
+    properties:
+      distance_km:
+        type: number
+      duration_minutes:
+        minimum: 1
+        type: integer
+      started_at:
+        type: string
+      transport_mode:
+        enum:
+        - walking
+        - cycling
+        - metro
+        - train
+        - car
+        - cab
+        - flight
+        - bus
+        - walk
+        - bicycle
+        - auto_rickshaw
+        - two_wheeler
+        type: string
+    type: object
+  dto.UpdatePreferencesRequest:
+    properties:
+      daily_goal_kg_co2e:
+        type: number
+      default_transport:
+        maxLength: 50
+        type: string
+      distance_unit:
+        enum:
+        - km
+        - miles
+        type: string
+      home_address:
+        maxLength: 500
+        type: string
+      home_lat:
+        type: number
+      home_lng:
+        type: number
+      push_notifications_enabled:
+        type: boolean
+      work_address:
+        maxLength: 500
+        type: string
+      work_lat:
+        type: number
+      work_lng:
+        type: number
+    type: object
+  dto.UpdateProfileRequest:
+    properties:
+      avatar_url:
+        type: string
+      display_name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      locale:
+        maxLength: 10
+        minLength: 2
+        type: string
+      timezone:
+        maxLength: 64
+        minLength: 1
+        type: string
+    type: object
+  dto.UpdatePushTokenRequest:
+    properties:
+      app_version:
+        maxLength: 50
+        type: string
+      push_token:
+        maxLength: 512
+        minLength: 1
+        type: string
+    required:
+    - push_token
+    type: object
+  dto.VerifyEmailRequest:
+    properties:
+      token:
+        type: string
+    required:
+    - token
+    type: object
+  dto.WeeklySummaryResponse:
+    properties:
+      activity_count:
+        type: integer
+      breakdown:
+        $ref: '#/definitions/domain.Breakdown'
+      computed_at:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      total_distance_km:
+        type: number
+      total_kg_co2e:
+        type: number
+      trend:
+        $ref: '#/definitions/dto.TrendData'
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      week_end:
+        type: string
+      week_start:
+        type: string
+    type: object
+  places.DistanceResult:
+    properties:
+      distanceKm:
+        type: number
+      found:
+        type: boolean
+    type: object
+  places.PlaceResult:
+    properties:
+      lat:
+        type: number
+      lng:
+        type: number
+      name:
         type: string
     type: object
 host: localhost:8081
@@ -99,6 +1051,242 @@ info:
   title: Atmos API
   version: "1.0"
 paths:
+  /activities:
+    get:
+      description: |-
+        Returns a paginated list of activities for the authenticated user.
+        Returns all activities when from/to are omitted.
+      parameters:
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: to
+        type: string
+      - description: Page size (default 50, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ActivitiesPage'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List activities
+      tags:
+      - activities
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Records a transport or flight activity and triggers async emission calculation.
+        activity_type is derived automatically from transport_mode — do not send it.
+      parameters:
+      - description: Activity payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.IngestActivityRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Activity'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Ingest an activity
+      tags:
+      - activities
+  /activities/{id}:
+    delete:
+      description: Permanently removes an activity and recalculates the affected day's
+      parameters:
+      - description: Activity UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete an activity
+      tags:
+      - activities
+    get:
+      description: |-
+        Returns a single activity by ID (must belong to the authenticated user),
+        including a server-computed impact context (trees/LED-hours/global-%
+        comparisons and a greener-alternative suggestion where one exists).
+      parameters:
+      - description: Activity UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ActivityDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get an activity
+      tags:
+      - activities
+    patch:
+      consumes:
+      - application/json
+      description: Partially updates an activity. Only transport_mode, distance_km,
+      parameters:
+      - description: Activity UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateActivityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Activity'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update an activity
+      tags:
+      - activities
+  /activities/export:
+    get:
+      description: |-
+        Returns all activities for the authenticated user as a downloadable CSV file.
+        Optional from/to query params filter by date_local (YYYY-MM-DD). Capped at 5000 rows.
+      parameters:
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: to
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV file attachment
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export activities as CSV
+      tags:
+      - activities
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Sends a reset link to the given email if an account exists.
+      parameters:
+      - description: Email address
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Request a password reset email
+      tags:
+      - auth
   /auth/google/callback:
     get:
       description: Handles the OAuth callback, exchanges the code, and returns a JWT
@@ -148,6 +1336,39 @@ paths:
             additionalProperties: true
             type: object
       summary: Google OAuth — initiate login
+      tags:
+      - auth
+  /auth/google/token:
+    post:
+      consumes:
+      - application/json
+      description: Verifies a Google ID token from the native mobile SDK and returns
+        a JWT pair
+      parameters:
+      - description: Google ID token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GoogleTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GoogleCallbackResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Google Sign-In (mobile)
       tags:
       - auth
   /auth/login:
@@ -271,6 +1492,419 @@ paths:
       summary: Register a new user
       tags:
       - auth
+  /auth/resend-verification:
+    post:
+      description: Sends a fresh verification link to the authenticated user's email.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Resend verification email
+      tags:
+      - auth
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Validates the token from the reset email and sets a new password.
+      parameters:
+      - description: Token and new password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Reset password using a token
+      tags:
+      - auth
+  /auth/verify-email:
+    post:
+      consumes:
+      - application/json
+      description: Confirms ownership of the email address using the token from the
+      parameters:
+      - description: Verification token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.VerifyEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Verify email address
+      tags:
+      - auth
+  /devices:
+    get:
+      description: Returns all active devices registered by the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Device'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List active devices
+      tags:
+      - devices
+  /devices/{id}:
+    delete:
+      description: Marks a device as inactive (soft deactivation)
+      parameters:
+      - description: Device UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Deregister a device
+      tags:
+      - devices
+    patch:
+      consumes:
+      - application/json
+      description: Updates the push token (and optionally app version) for a device
+      parameters:
+      - description: Device UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Push token payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdatePushTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Device'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update device push token
+      tags:
+      - devices
+  /devices/register:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Registers a new device or updates an existing one (upsert by device_token).
+        iOS/iPadOS require push_provider=apns and apns_environment.
+        Android requires push_provider=fcm or none.
+      parameters:
+      - description: Device registration payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RegisterDeviceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Device'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register or update a device
+      tags:
+      - devices
+  /gmail/auth-url:
+    get:
+      description: Returns the Google consent-page URL as JSON so mobile clients
+      parameters:
+      - description: 'Target platform: mobile (deep-link callback) or omit for web'
+        in: query
+        name: platform
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get Gmail OAuth URL
+      tags:
+      - gmail
+  /gmail/callback:
+    get:
+      description: Exchanges the auth code for tokens and stores them.
+      parameters:
+      - description: OAuth state
+        in: query
+        name: state
+        required: true
+        type: string
+      - description: OAuth code
+        in: query
+        name: code
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Found
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Gmail OAuth callback
+      tags:
+      - gmail
+  /gmail/connect:
+    get:
+      description: Redirects the authenticated user to Google's consent page.
+      responses:
+        "302":
+          description: Found
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Start Gmail OAuth flow
+      tags:
+      - gmail
+  /gmail/disconnect:
+    delete:
+      description: Removes the stored Gmail OAuth tokens for the authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Disconnect Gmail
+      tags:
+      - gmail
+  /gmail/enrich-unrecognised:
+    post:
+      description: Fetches emails that failed regex parsing (status=unrecognised)
+        and
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Re-parse unrecognised emails via LLM
+      tags:
+      - gmail
+  /gmail/logs:
+    get:
+      description: Returns a paginated list of emails we have processed (or attempted).
+      parameters:
+      - description: Page size (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.LogsPage'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Gmail ingestion history
+      tags:
+      - gmail
+  /gmail/reset-sync:
+    post:
+      description: Clears the stored Gmail historyId so the next sync re-scans all
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reset Gmail sync history
+      tags:
+      - gmail
+  /gmail/status:
+    get:
+      description: Returns whether the user has connected their Gmail account.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ConnectionStatus'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Gmail connection status
+      tags:
+      - gmail
+  /gmail/sync:
+    post:
+      description: Fetches recent ride-receipt emails, parses them, and ingests activities.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SyncResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Trigger Gmail email sync
+      tags:
+      - gmail
   /health:
     get:
       description: Returns server and dependency status
@@ -286,6 +1920,596 @@ paths:
       summary: Health check
       tags:
       - system
+  /insights:
+    get:
+      description: |-
+        Returns a paginated list of insights for the authenticated user,
+        filtered to insights whose period overlaps the requested window.
+      parameters:
+      - description: Return only unread insights
+        in: query
+        name: unread
+        type: boolean
+      - description: Page size (1-50, default 20)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      - description: 'Filter window: week|month|year (default week)'
+        in: query
+        name: period
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.InsightsPage'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List insights
+      tags:
+      - insights
+  /insights/{id}:
+    get:
+      description: Returns a single insight by ID
+      parameters:
+      - description: Insight UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Insight'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get insight
+      tags:
+      - insights
+  /insights/{id}/read:
+    patch:
+      description: Marks the given insight as read for the authenticated user
+      parameters:
+      - description: Insight UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Mark insight as read
+      tags:
+      - insights
+  /internal/gmail/enrich-all:
+    post:
+      description: Internal endpoint called by the worker cron to enrich emails
+      parameters:
+      - description: Internal shared secret
+        in: header
+        name: X-Internal-Key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Re-parse unrecognised emails for all users via LLM
+      tags:
+      - internal
+  /internal/gmail/sync-all:
+    post:
+      description: Internal endpoint called by the Linux cron job to sync Gmail for
+        every
+      parameters:
+      - description: Internal shared secret
+        in: header
+        name: X-Internal-Key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Trigger Gmail sync for all users
+      tags:
+      - internal
+  /places/autocomplete:
+    get:
+      description: |-
+        Returns up to 5 place suggestions matching the query string.
+        Backed by the Google Maps Places Text Search API; degrades to an
+        empty list when no Maps API key is configured.
+      parameters:
+      - description: Partial place name or address
+        in: query
+        name: q
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/places.PlaceResult'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Place autocomplete
+      tags:
+      - places
+  /places/distance:
+    get:
+      description: |-
+        Returns the route distance in km between two coordinates for a given
+        travel mode. Backed by the Google Maps Distance Matrix API.
+      parameters:
+      - description: Origin latitude
+        in: query
+        name: originLat
+        required: true
+        type: number
+      - description: Origin longitude
+        in: query
+        name: originLng
+        required: true
+        type: number
+      - description: Destination latitude
+        in: query
+        name: destLat
+        required: true
+        type: number
+      - description: Destination longitude
+        in: query
+        name: destLng
+        required: true
+        type: number
+      - description: One of driving, walking, bicycling, transit
+        in: query
+        name: mode
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/places.DistanceResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Route distance
+      tags:
+      - places
+  /providers:
+    get:
+      description: Returns providers that have at least one active email type.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Provider'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List active providers
+      tags:
+      - providers
+  /providers/all:
+    get:
+      description: Returns every provider including inactive ("coming soon") ones.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Provider'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List all providers
+      tags:
+      - providers
+  /timeline/daily:
+    get:
+      description: |-
+        Returns the emission and distance summary for a given day, with trend vs. the previous day.
+        Defaults to today when the date query param is omitted. Returns zeros (not 404) for days with no recorded activities.
+      parameters:
+      - description: 'Date in YYYY-MM-DD format (default: today in UTC)'
+        in: query
+        name: date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.DailySummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get daily timeline summary
+      tags:
+      - timeline
+  /timeline/monthly:
+    get:
+      description: |-
+        Returns the emission and distance summary for a given month, with trend vs. the previous month.
+        Defaults to the current month when year/month are omitted.
+      parameters:
+      - description: Year (e.g. 2025)
+        in: query
+        name: year
+        type: integer
+      - description: Month (1–12)
+        in: query
+        name: month
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MonthlySummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get monthly timeline summary
+      tags:
+      - timeline
+  /timeline/weekly:
+    get:
+      description: |-
+        Returns the emission and distance summary for a given week (Mon–Sun), with trend vs. the previous week.
+        week_start must be a Monday. Defaults to the current week's Monday when omitted.
+      parameters:
+      - description: Week start date in YYYY-MM-DD format (Monday)
+        in: query
+        name: week_start
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WeeklySummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get weekly timeline summary
+      tags:
+      - timeline
+  /users/me:
+    delete:
+      consumes:
+      - application/json
+      description: Soft-deletes the authenticated user's account.
+      parameters:
+      - description: Confirmation payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.DeleteAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete account
+      tags:
+      - users
+    get:
+      description: Returns the authenticated user's profile
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.User'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Updates display name, timezone, locale, or avatar URL
+      parameters:
+      - description: Profile update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update current user profile
+      tags:
+      - users
+  /users/me/api-keys:
+    get:
+      description: Returns all active API keys for the authenticated user. Raw keys
+        are never returned.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.APIKeyItem'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List API keys
+      tags:
+      - api-keys
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Generates a new API key for the authenticated user. The raw key is returned
+        once in this response and cannot be retrieved again. Store it securely.
+      parameters:
+      - description: Key name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateAPIKeyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CreateAPIKeyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create an API key
+      tags:
+      - api-keys
+  /users/me/api-keys/{id}:
+    delete:
+      description: Permanently revokes an API key. This cannot be undone.
+      parameters:
+      - description: API key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke an API key
+      tags:
+      - api-keys
+  /users/me/preferences:
+    get:
+      description: Returns the authenticated user's preferences, creating defaults
+        if none exist
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.UserPreferences'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get user preferences
+      tags:
+      - users
+    put:
+      consumes:
+      - application/json
+      description: Partially updates preferences — only provided fields are changed
+      parameters:
+      - description: Preferences payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdatePreferencesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.UserPreferences'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update user preferences
+      tags:
+      - users
 securityDefinitions:
   BearerAuth:
     description: 'Enter: Bearer <your_access_token>'
