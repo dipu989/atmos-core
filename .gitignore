@@ -1,5 +1,6 @@
 # Binaries
 /bin/
+/worker
 *.exe
 *.exe~
 *.dll
@@ -37,3 +38,6 @@ docker-compose.override.yml
 air.toml
 .air.toml
 tmp/
+
+# Local-only reference files — never committed
+/tasks/
