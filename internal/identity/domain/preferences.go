@@ -11,9 +11,7 @@ type UserPreferences struct {
 	UserID                   uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"user_id"`
 	DistanceUnit             string    `gorm:"not null;default:'km'"          json:"distance_unit"`
 	PushNotificationsEnabled bool      `gorm:"not null;default:true"          json:"push_notifications_enabled"`
-	WeeklyReportEnabled      bool      `gorm:"not null;default:true"          json:"weekly_report_enabled"`
 	DailyGoalKgCO2e          *float64  `gorm:"column:daily_goal_kg_co2e"      json:"daily_goal_kg_co2e,omitempty"`
-	DataSharingEnabled       bool      `gorm:"not null;default:false"         json:"data_sharing_enabled"`
 	HomeAddress              *string   `gorm:"column:home_address"            json:"home_address,omitempty"`
 	HomeLat                  *float64  `gorm:"column:home_lat"                json:"home_lat,omitempty"`
 	HomeLng                  *float64  `gorm:"column:home_lng"                json:"home_lng,omitempty"`

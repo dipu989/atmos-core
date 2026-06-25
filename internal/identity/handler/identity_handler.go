@@ -149,9 +149,7 @@ func (h *IdentityHandler) UpdatePreferences(c *fiber.Ctx) error {
 	prefs, err := h.svc.UpdatePreferences(c.Context(), userID, service.UpdatePreferencesInput{
 		DistanceUnit:             distanceUnit,
 		PushNotificationsEnabled: req.PushNotificationsEnabled,
-		WeeklyReportEnabled:      req.WeeklyReportEnabled,
 		DailyGoalKgCO2e:          req.DailyGoalKgCO2e,
-		DataSharingEnabled:       req.DataSharingEnabled,
 		HomeAddress:              req.HomeAddress,
 		HomeLat:                  req.HomeLat,
 		HomeLng:                  req.HomeLng,

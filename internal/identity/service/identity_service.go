@@ -67,9 +67,7 @@ func (s *IdentityService) UpdateProfile(ctx context.Context, userID uuid.UUID, d
 type UpdatePreferencesInput struct {
 	DistanceUnit             *string
 	PushNotificationsEnabled *bool
-	WeeklyReportEnabled      *bool
 	DailyGoalKgCO2e          *float64
-	DataSharingEnabled       *bool
 	HomeAddress              *string
 	HomeLat                  *float64
 	HomeLng                  *float64
@@ -99,14 +97,8 @@ func (s *IdentityService) UpdatePreferences(ctx context.Context, userID uuid.UUI
 	if input.PushNotificationsEnabled != nil {
 		prefs.PushNotificationsEnabled = *input.PushNotificationsEnabled
 	}
-	if input.WeeklyReportEnabled != nil {
-		prefs.WeeklyReportEnabled = *input.WeeklyReportEnabled
-	}
 	if input.DailyGoalKgCO2e != nil {
 		prefs.DailyGoalKgCO2e = input.DailyGoalKgCO2e
-	}
-	if input.DataSharingEnabled != nil {
-		prefs.DataSharingEnabled = *input.DataSharingEnabled
 	}
 	if input.HomeAddress != nil {
 		prefs.HomeAddress = input.HomeAddress
@@ -171,8 +163,6 @@ func (s *IdentityService) createDefaultPreferences(ctx context.Context, userID u
 		UserID:                   userID,
 		DistanceUnit:             "km",
 		PushNotificationsEnabled: true,
-		WeeklyReportEnabled:      true,
-		DataSharingEnabled:       false,
 	}
 	if err := s.repo.CreatePreferences(ctx, prefs); err != nil {
 		return nil, err
