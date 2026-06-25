@@ -3,28 +3,58 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	actdomain "github.com/dipu/atmos-core/internal/activity/domain"
 	devdomain "github.com/dipu/atmos-core/internal/device/domain"
 	devrepo "github.com/dipu/atmos-core/internal/device/repository"
+	idrepo "github.com/dipu/atmos-core/internal/identity/repository"
 	insightdomain "github.com/dipu/atmos-core/internal/insight/domain"
 	"github.com/dipu/atmos-core/platform/eventbus"
 	"github.com/dipu/atmos-core/platform/logger"
 	"github.com/dipu/atmos-core/platform/push"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // NotificationService subscribes to domain events and delivers push notifications
 // to the user's registered devices.
 type NotificationService struct {
 	deviceRepo *devrepo.DeviceRepository
+	userRepo   *idrepo.UserRepository
 	fcm        push.Sender // nil when FCM is not configured
 }
 
-func NewNotificationService(deviceRepo *devrepo.DeviceRepository, fcm push.Sender) *NotificationService {
-	return &NotificationService{deviceRepo: deviceRepo, fcm: fcm}
+func NewNotificationService(deviceRepo *devrepo.DeviceRepository, userRepo *idrepo.UserRepository, fcm push.Sender) *NotificationService {
+	return &NotificationService{deviceRepo: deviceRepo, userRepo: userRepo, fcm: fcm}
+}
+
+// pushAllowed reports whether a push should be sent for userID, logging the outcome
+// with the caller's log context. No preferences row yet (new user) fails open to
+// match the column's default of true. Any other lookup error also fails open —
+// consistent with this codebase's existing fail-open convention for preference
+// reads (see the regionFn closures in cmd/api/main.go and cmd/worker/main.go) —
+// but is logged, unlike a missing row, since it signals a real infra problem.
+func (s *NotificationService) pushAllowed(ctx context.Context, userID uuid.UUID, log *zap.Logger) bool {
+	prefs, err := s.userRepo.GetPreferences(ctx, userID)
+	switch {
+	case err == nil:
+		// fall through to the preference check below
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return true
+	default:
+		log.Warn("notification: preferences lookup failed, sending anyway", zap.Error(err))
+		return true
+	}
+
+	if !prefs.PushNotificationsEnabled {
+		log.Info("notification: push notifications disabled for user, skipping")
+		return false
+	}
+	return true
 }
 
 // HandleInsightCreated is subscribed to EventInsightCreated.
@@ -44,6 +74,10 @@ func (s *NotificationService) HandleInsightCreated(ctx context.Context, event ev
 		zap.String("user_id", insight.UserID.String()),
 		zap.String("insight_id", insight.ID.String()),
 	)
+
+	if !s.pushAllowed(ctx, insight.UserID, log) {
+		return
+	}
 
 	devices, err := s.deviceRepo.ListActiveByUser(ctx, insight.UserID)
 	if err != nil {
@@ -96,6 +130,10 @@ func (s *NotificationService) HandleActivityPossibleDuplicate(ctx context.Contex
 		zap.String("user_id", payload.UserID.String()),
 		zap.String("activity_id", payload.ActivityID.String()),
 	)
+
+	if !s.pushAllowed(ctx, payload.UserID, log) {
+		return
+	}
 
 	devices, err := s.deviceRepo.ListActiveByUser(ctx, payload.UserID)
 	if err != nil {

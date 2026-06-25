@@ -89,7 +89,7 @@ func main() {
 	agg := timelineagg.NewAggregator(summaryRepo)
 	timelineSvc := timelineservice.NewTimelineService(summaryRepo, agg)
 	insightSvc := insightservice.NewInsightService(insightRepo, summaryRepo, bus)
-	notifSvc := notifservice.NewNotificationService(deviceRepo, fcmSender)
+	notifSvc := notifservice.NewNotificationService(deviceRepo, userRepo, fcmSender)
 	gmailSvc := gmailservice.NewGmailService(
 		gmailservice.Config{
 			ClientID:     cfg.Google.ClientID,
