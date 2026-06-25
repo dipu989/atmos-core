@@ -41,4 +41,3 @@ tmp/
 
 # Local-only reference files — never committed
 /tasks/
-/atmos-api.postman_collection.json
