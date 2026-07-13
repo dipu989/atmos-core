@@ -19,6 +19,10 @@ This project is an attempt to visualize the impact each of us has on the planet 
 | Logging | Zap |
 | Docs | Swagger (swaggo) |
 
+## Live
+
+Hosted API: [https://atmosapp.dev](https://atmosapp.dev)
+
 ## Quick start
 
 ### Prerequisites
