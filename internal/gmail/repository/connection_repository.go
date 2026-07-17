@@ -34,6 +34,14 @@ func (r *ConnectionRepository) Save(ctx context.Context, conn *domain.GmailConne
 	return r.db.WithContext(ctx).Save(conn).Error
 }
 
+// UpdateFields applies a targeted column update without touching unspecified fields.
+// Use instead of Save() to avoid overwriting unrelated columns in concurrent scenarios.
+func (r *ConnectionRepository) UpdateFields(ctx context.Context, id uuid.UUID, fields map[string]any) error {
+	return r.db.WithContext(ctx).Model(&domain.GmailConnection{}).
+		Where("id = ?", id).
+		Updates(fields).Error
+}
+
 func (r *ConnectionRepository) FindByUserID(ctx context.Context, userID uuid.UUID) (*domain.GmailConnection, error) {
 	var conn domain.GmailConnection
 	err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&conn).Error
