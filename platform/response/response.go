@@ -41,6 +41,10 @@ func Conflict(c *fiber.Ctx, msg string) error {
 	return c.Status(fiber.StatusConflict).JSON(envelope{Success: false, Error: msg})
 }
 
+func UnprocessableEntity(c *fiber.Ctx, msg string) error {
+	return c.Status(fiber.StatusUnprocessableEntity).JSON(envelope{Success: false, Error: msg})
+}
+
 func InternalError(c *fiber.Ctx, msg string) error {
 	return c.Status(fiber.StatusInternalServerError).JSON(envelope{Success: false, Error: msg})
 }
