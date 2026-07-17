@@ -12,11 +12,12 @@ import (
 
 // GmailHandler exposes Gmail connect / sync endpoints.
 type GmailHandler struct {
-	svc *service.GmailService
+	svc         *service.GmailService
+	frontendURL string
 }
 
-func NewGmailHandler(svc *service.GmailService) *GmailHandler {
-	return &GmailHandler{svc: svc}
+func NewGmailHandler(svc *service.GmailService, frontendURL string) *GmailHandler {
+	return &GmailHandler{svc: svc, frontendURL: frontendURL}
 }
 
 // Connect godoc
@@ -104,7 +105,7 @@ func (h *GmailHandler) Callback(c *fiber.Ctx) error {
 		// Deep-link the mobile app back to the foreground with success signal.
 		return c.Redirect("atmos://gmail/connected", fiber.StatusFound)
 	}
-	return c.Redirect("/", fiber.StatusFound)
+	return c.Redirect(h.frontendURL+"/settings", fiber.StatusFound)
 }
 
 // Status godoc

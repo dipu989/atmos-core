@@ -192,7 +192,7 @@ func main() {
 	activityH := acthandler.NewActivityHandler(activitySvc, emissionSvc)
 	timelineH := timelinehandler.NewTimelineHandler(timelineSvc)
 	insightH := insighthandler.NewInsightHandler(insightSvc)
-	gmailH := gmailhandler.NewGmailHandler(gmailSvc)
+	gmailH := gmailhandler.NewGmailHandler(gmailSvc, cfg.App.FrontendURL)
 	providerH := gmailhandler.NewProviderHandler(gmailProvRepo)
 	placesH := placeshandler.NewHandler(cfg.Google.MapsAPIKey)
 
