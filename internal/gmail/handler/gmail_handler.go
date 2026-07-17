@@ -159,6 +159,10 @@ func (h *GmailHandler) Sync(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 	result, err := h.svc.Sync(c.Context(), userID)
 	if err != nil {
+		if errors.Is(err, service.ErrTokenExpired) {
+			// 401 tells the frontend the OAuth grant is gone and the user must reconnect.
+			return response.Unauthorized(c, "gmail token revoked — please reconnect")
+		}
 		if errors.Is(err, service.ErrNotConnected) {
 			return response.BadRequest(c, "gmail not connected — call /gmail/connect first")
 		}
@@ -236,6 +240,9 @@ func (h *GmailHandler) EnrichUnrecognised(c *fiber.Ctx) error {
 	userID := middleware.CurrentUserID(c)
 	result, err := h.svc.EnrichUnrecognised(c.Context(), userID)
 	if err != nil {
+		if errors.Is(err, service.ErrTokenExpired) {
+			return response.Unauthorized(c, "gmail token revoked — please reconnect")
+		}
 		if errors.Is(err, service.ErrNotConnected) {
 			return response.BadRequest(c, "gmail not connected — call /gmail/connect first")
 		}

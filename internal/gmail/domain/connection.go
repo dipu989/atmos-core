@@ -41,6 +41,7 @@ type GmailConnection struct {
 	HistoryID       *string      `json:"history_id,omitempty"` // Gmail historyId for incremental sync
 	LastSyncAt      *time.Time   `json:"last_sync_at,omitempty"`
 	LastSyncSummary *SyncSummary `gorm:"type:jsonb"                     json:"last_sync_summary,omitempty"`
+	LastSyncError   *string      `json:"last_sync_error,omitempty"` // set when sync fails; cleared on success
 	ConnectedAt     time.Time    `gorm:"not null"                       json:"connected_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
 }

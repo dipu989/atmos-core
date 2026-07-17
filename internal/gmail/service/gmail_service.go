@@ -35,6 +35,12 @@ import (
 
 var ErrNotConnected = errors.New("gmail not connected for this user")
 
+// ErrTokenExpired is returned when the stored OAuth refresh token has been
+// revoked by Google (invalid_grant). The user must reconnect Gmail to restore access.
+// Callers must check ErrTokenExpired BEFORE ErrNotConnected — it wraps the latter,
+// so an ErrNotConnected-only check will silently match and return the wrong status.
+var ErrTokenExpired = fmt.Errorf("gmail token revoked — please reconnect: %w", ErrNotConnected)
+
 // firstSyncLookback: how far back on the very first sync (no historyId yet).
 const firstSyncLookback = "newer_than:90d"
 
@@ -231,11 +237,28 @@ func (s *GmailService) Sync(ctx context.Context, userID uuid.UUID) (*SyncResult,
 
 	gmailSvc, err := s.gmailClient(ctx, conn)
 	if err != nil {
-		return nil, fmt.Errorf("gmail client: %w", err)
+		if errors.Is(err, ErrTokenExpired) {
+			// Persist only genuine revocations so GET /gmail/status can prompt reconnect.
+			if saveErr := s.connRepo.UpdateFields(ctx, conn.ID, map[string]any{
+				"last_sync_error": err.Error(),
+				"updated_at":      time.Now().UTC(),
+			}); saveErr != nil {
+				logger.L().Warn("gmail: failed to persist token error", zap.Error(saveErr))
+			}
+		}
+		return nil, err
 	}
 
 	messageIDs, newHistoryID, err := s.listMessageIDs(ctx, gmailSvc, conn, gmailQuery)
 	if err != nil {
+		// Token is valid (gmailClient succeeded); clear any stale revocation flag so
+		// a transient list failure does not leave the reconnect prompt stuck.
+		if clearErr := s.connRepo.UpdateFields(ctx, conn.ID, map[string]any{
+			"last_sync_error": nil,
+			"updated_at":      time.Now().UTC(),
+		}); clearErr != nil {
+			logger.L().Warn("gmail: failed to clear sync error", zap.Error(clearErr))
+		}
 		return nil, err
 	}
 
@@ -244,14 +267,16 @@ func (s *GmailService) Sync(ctx context.Context, userID uuid.UUID) (*SyncResult,
 	// Persist updated cursor + summary so the next sync is incremental
 	// and GET /gmail/status can return last_sync_summary without extra DB query.
 	now := time.Now().UTC()
-	summary := domain.SyncSummary(*result)
-	conn.LastSyncAt = &now
-	conn.LastSyncSummary = &summary
-	conn.UpdatedAt = now
-	if newHistoryID != "" {
-		conn.HistoryID = &newHistoryID
+	updates := map[string]any{
+		"last_sync_at":      now,
+		"last_sync_summary": domain.SyncSummary(*result),
+		"last_sync_error":   nil,
+		"updated_at":        now,
 	}
-	if err := s.connRepo.Save(ctx, conn); err != nil {
+	if newHistoryID != "" {
+		updates["history_id"] = newHistoryID
+	}
+	if err := s.connRepo.UpdateFields(ctx, conn.ID, updates); err != nil {
 		logger.L().Warn("gmail: failed to persist sync state", zap.Error(err))
 	}
 
@@ -839,7 +864,15 @@ func (s *GmailService) EnrichUnrecognised(ctx context.Context, userID uuid.UUID)
 
 	gmailSvc, err := s.gmailClient(ctx, conn)
 	if err != nil {
-		return nil, err // gmailClient wraps revoked-token errors as ErrNotConnected
+		if errors.Is(err, ErrTokenExpired) {
+			if saveErr := s.connRepo.UpdateFields(ctx, conn.ID, map[string]any{
+				"last_sync_error": err.Error(),
+				"updated_at":      time.Now().UTC(),
+			}); saveErr != nil {
+				logger.L().Warn("gmail: failed to persist token error", zap.Error(saveErr))
+			}
+		}
+		return nil, err
 	}
 
 	routingMap, err := s.provRepo.BuildRoutingMap(ctx)
@@ -1010,6 +1043,15 @@ func (s *GmailService) EnrichUnrecognisedAll(ctx context.Context) *AllEnrichResu
 	for i := range conns {
 		gmailSvc, err := s.gmailClient(ctx, &conns[i])
 		if err != nil {
+			if errors.Is(err, ErrTokenExpired) {
+				if saveErr := s.connRepo.UpdateFields(ctx, conns[i].ID, map[string]any{
+					"last_sync_error": err.Error(),
+					"updated_at":      time.Now().UTC(),
+				}); saveErr != nil {
+					log.Warn("gmail: failed to persist token error",
+						zap.Stringer("user_id", conns[i].UserID), zap.Error(saveErr))
+				}
+			}
 			log.Warn("gmail enrich all: auth failed",
 				zap.Stringer("user_id", conns[i].UserID), zap.Error(err))
 			res.UsersFailed++
@@ -1167,18 +1209,29 @@ func (s *GmailService) gmailClient(ctx context.Context, conn *domain.GmailConnec
 	}
 	ts := s.oauthCfg.TokenSource(ctx, stored)
 
-	// Token() triggers a refresh when the access token is expired.
-	// A refresh failure means the connection is broken (revoked grant), so we
-	// wrap as ErrNotConnected so all callers can surface a meaningful error.
 	fresh, err := ts.Token()
 	if err != nil {
-		return nil, fmt.Errorf("%w: token refresh: %v", ErrNotConnected, err)
+		// Only invalid_grant means the OAuth grant was permanently revoked.
+		// Network faults, 503s, and other transient failures must not be treated as
+		// revocations — they would wrongly prompt the user to reconnect a valid grant.
+		var re *oauth2.RetrieveError
+		if errors.As(err, &re) && re.ErrorCode == "invalid_grant" {
+			return nil, fmt.Errorf("%w: %v", ErrTokenExpired, err)
+		}
+		return nil, fmt.Errorf("token refresh: %w", err)
 	}
 	if fresh.AccessToken != conn.AccessToken {
 		conn.AccessToken = fresh.AccessToken
 		conn.TokenExpiry = fresh.Expiry.UTC()
-		conn.UpdatedAt = time.Now().UTC()
-		_ = s.connRepo.Save(ctx, conn)
+		now := time.Now().UTC()
+		conn.UpdatedAt = now
+		if err := s.connRepo.UpdateFields(ctx, conn.ID, map[string]any{
+			"access_token": fresh.AccessToken,
+			"token_expiry": fresh.Expiry.UTC(),
+			"updated_at":   now,
+		}); err != nil {
+			logger.L().Warn("gmail: failed to persist refreshed token", zap.Error(err))
+		}
 	}
 
 	return googleapi.NewService(ctx, option.WithTokenSource(ts))

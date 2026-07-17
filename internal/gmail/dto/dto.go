@@ -15,6 +15,9 @@ type ConnectionStatus struct {
 	ConnectedAt     *time.Time          `json:"connected_at,omitempty"`
 	LastSyncAt      *time.Time          `json:"last_sync_at,omitempty"`
 	LastSyncSummary *domain.SyncSummary `json:"last_sync_summary,omitempty"`
+	// TokenExpired is true when the last sync failed because Google revoked the
+	// OAuth grant. The frontend should show a "Reconnect Gmail" prompt.
+	TokenExpired bool `json:"token_expired,omitempty"`
 }
 
 func ConnectionStatusFromDomain(conn *domain.GmailConnection) ConnectionStatus {
@@ -27,6 +30,7 @@ func ConnectionStatusFromDomain(conn *domain.GmailConnection) ConnectionStatus {
 		ConnectedAt:     &conn.ConnectedAt,
 		LastSyncAt:      conn.LastSyncAt,
 		LastSyncSummary: conn.LastSyncSummary,
+		TokenExpired:    conn.LastSyncError != nil,
 	}
 }
 
