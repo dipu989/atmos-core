@@ -241,7 +241,7 @@ func (h *GmailHandler) EnrichUnrecognised(c *fiber.Ctx) error {
 	result, err := h.svc.EnrichUnrecognised(c.Context(), userID)
 	if err != nil {
 		if errors.Is(err, service.ErrTokenExpired) {
-			return response.Unauthorized(c, "gmail token revoked — please reconnect")
+			return response.UnprocessableEntity(c, "gmail token revoked — please reconnect")
 		}
 		if errors.Is(err, service.ErrNotConnected) {
 			return response.BadRequest(c, "gmail not connected — call /gmail/connect first")
