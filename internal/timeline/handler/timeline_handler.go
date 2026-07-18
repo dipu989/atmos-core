@@ -190,8 +190,8 @@ func (h *TimelineHandler) GetRange(c *fiber.Ctx) error {
 	if to.Before(from) {
 		return response.BadRequest(c, "to must be after from")
 	}
-	if to.Sub(from) > 90*24*time.Hour {
-		return response.BadRequest(c, "range cannot exceed 90 days")
+	if to.Sub(from) > 366*24*time.Hour {
+		return response.BadRequest(c, "range cannot exceed 366 days")
 	}
 
 	summaries, err := h.svc.GetRange(c.Context(), userID, from, to)
