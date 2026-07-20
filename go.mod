@@ -6,7 +6,7 @@ require (
 	firebase.google.com/go/v4 v4.20.0
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.29
-	github.com/aws/aws-sdk-go-v2/service/ses v1.35.2
+	github.com/aws/aws-sdk-go-v2/service/ses v1.36.1
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/golang-jwt/jwt/v5 v5.3.1
